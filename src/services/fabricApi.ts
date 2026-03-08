@@ -205,6 +205,38 @@ export class FabricApiService {
     return runs;
   }
 
+  /** Fetches only the first page of runs and returns the most recent one.
+   *  Used by the dashboard to minimise API calls — one request per pipeline
+   *  instead of following all pagination pages. */
+  async getLastPipelineRun(
+    tenantId: string,
+    workspaceId: string,
+    pipelineId: string,
+  ): Promise<PipelineRun | undefined> {
+    const path = `/workspaces/${workspaceId}/dataPipelines/${pipelineId}/jobs/instances`;
+    const data = await this.request<FabricListResponse<FabricRun>>(tenantId, path);
+    const items = data.value ?? [];
+    if (items.length === 0) return undefined;
+
+    const runs = items.map(r => {
+      const start = r.startTimeUtc ? new Date(r.startTimeUtc).getTime() : undefined;
+      const end   = r.endTimeUtc   ? new Date(r.endTimeUtc).getTime()   : undefined;
+      return {
+        id: r.id,
+        pipelineId,
+        runId: r.id,
+        status: this.normalizeStatus(r.status),
+        startTime: r.startTimeUtc ?? new Date().toISOString(),
+        endTime: r.endTimeUtc,
+        durationMs: start !== undefined && end !== undefined ? end - start : undefined,
+        errorMessage: r.failureReason?.message,
+      };
+    });
+
+    runs.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+    return runs[0];
+  }
+
   /** Returns the new job instance ID */
   async triggerPipeline(tenantId: string, workspaceId: string, pipelineId: string): Promise<string> {
     const result = await this.request<{ id: string }>(

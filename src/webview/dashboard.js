@@ -81,6 +81,11 @@ function renderLoadingBar() {
 }
 
 function renderLastRefreshed() {
+  if (state.isLoading && state.batchProgress) {
+    const { done, total } = state.batchProgress;
+    dom.lastRefreshed.textContent = `Fetching… batch ${done}/${total}`;
+    return;
+  }
   if (state.lastRefreshed) {
     const time = formatRelative(state.lastRefreshed);
     dom.lastRefreshed.textContent = state.isFromCache
@@ -238,11 +243,12 @@ function buildRowHtml(/** @type {any} */ p) {
   <td class="col-name">
     <div class="name-cell">
       <div class="actions">
-        <button class="action-btn" data-action="refresh-pipeline" title="Refresh this pipeline">↺</button>
+        <button class="action-btn" data-action="refresh-pipeline"  title="Refresh last run">↺</button>
+        <button class="action-btn" data-action="fetch-history"    title="Fetch full history">⬇</button>
         <button class="action-btn" data-action="rerun"            title="Re-run pipeline">▶</button>
         <button class="action-btn ${!runId ? 'disabled' : ''}"   data-action="copy"    title="Copy Run ID">📋</button>
         <button class="action-btn" data-action="portal"           title="Open in Fabric portal">🔗</button>
-        <button class="action-btn" data-action="history"          title="View run history">📊</button>
+        <button class="action-btn" data-action="history"          title="View full history">📊</button>
       </div>
       <span class="pipeline-name" title="${esc(p.displayName)}">${esc(p.displayName)}</span>
     </div>
@@ -289,6 +295,10 @@ function handleRowClick(/** @type {MouseEvent} */ e) {
     case 'refresh-pipeline':
       post({ type: 'refreshPipeline', pipelineId: pid, workspaceId: wsid });
       showToast(`Refreshing "${pname}"…`, 'info');
+      break;
+
+    case 'fetch-history':
+      post({ type: 'fetchPipelineHistory', pipelineId: pid, workspaceId: wsid });
       break;
 
     case 'rerun':

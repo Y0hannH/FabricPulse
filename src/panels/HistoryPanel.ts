@@ -81,6 +81,11 @@ export class HistoryPanel {
     const { rate, total } = this._storage.getSuccessRate(this._pipeline.id, days || 3650);
     const patterns = this._storage.detectPatterns(this._pipeline.id, days || 90);
 
+    const lastCachedAt = runs.reduce<string | undefined>((max, r) => {
+      if (!r.createdAt) return max;
+      return max === undefined || r.createdAt > max ? r.createdAt : max;
+    }, undefined);
+
     const data: HistoryData = {
       pipeline: this._pipeline,
       runs,
@@ -89,6 +94,7 @@ export class HistoryPanel {
       successRate: rate,
       totalRuns: total,
       patterns,
+      lastCachedAt,
     };
 
     this._post({ type: 'historyData', data });

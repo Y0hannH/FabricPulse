@@ -100,6 +100,7 @@ export interface DashboardState {
   lastRefreshed: string;
   isFromCache: boolean;
   isLoading: boolean;
+  batchProgress?: { done: number; total: number };
   error?: string;
 }
 
@@ -111,6 +112,7 @@ export interface HistoryData {
   successRate: number;
   totalRuns: number;
   patterns: PatternWarning[];
+  lastCachedAt?: string;
 }
 
 // ─── Webview ↔ Extension messages ────────────────────────────────────────────
@@ -129,7 +131,8 @@ export type WebviewToExtMsg =
   | { type: 'openInFabric'; pipelineId: string; workspaceId: string; tenantId: string }
   | { type: 'viewHistory'; pipelineId: string; workspaceId: string; pipelineName: string; workspaceName: string }
   | { type: 'addTenant' }
-  | { type: 'exportHistory'; pipelineId: string };
+  | { type: 'exportHistory'; pipelineId: string }
+  | { type: 'fetchPipelineHistory'; pipelineId: string; workspaceId: string };
 
 // Messages sent FROM extension TO webview (dashboard)
 export type ExtToDashMsg =

@@ -45,6 +45,7 @@ export class DashboardPanel {
   private _lastRefreshed = '';
   private _isFromCache = false;
   private _isLoading = false;
+  private _batchProgress: { done: number; total: number } | undefined = undefined;
 
   /** pipelineId → epoch ms of last live API fetch for runs.
    *  Cleared when the workspace or tenant changes so the first load is always live. */
@@ -115,7 +116,7 @@ export class DashboardPanel {
 
   // ─── Public ──────────────────────────────────────────────────────────────────
 
-  public async refresh(): Promise<void> {
+  public async refresh(force = false): Promise<void> {
     if (this._isLoading) return; // debounce concurrent refreshes
 
     if (!this._currentTenantId) {
@@ -128,7 +129,7 @@ export class DashboardPanel {
 
     try {
       // ── No workspace selected: serve from SQLite cache when possible ──────
-      if (!this._selectedWorkspaceId) {
+      if (!this._selectedWorkspaceId && !force) {
         const cachedWorkspaces = this._storage.getKnownWorkspaces(this._currentTenantId);
 
         if (cachedWorkspaces.length > 0) {
@@ -181,7 +182,15 @@ export class DashboardPanel {
         ? this._workspaces.filter(w => w.id === this._selectedWorkspaceId)
         : this._workspaces;
 
-      const freshPipelines: PipelineWithStatus[] = [];
+      const cfg = vscode.workspace.getConfiguration('fabricPulse');
+      const pollingMs    = cfg.get<number>('pollingInterval', 60) * 1000;
+      const batchSize    = cfg.get<number>('batchSize', 5);
+      const batchDelayMs = cfg.get<number>('batchDelayMs', 2500);
+      const batchThreshold = cfg.get<number>('batchThreshold', 10);
+
+      // ── Phase 1: collect all pipelines with cached run data (no API calls for runs) ──
+      type PipelineMeta = { pipeline: PipelineWithStatus; ws: Workspace };
+      const allMeta: PipelineMeta[] = [];
 
       for (const ws of targetWorkspaces) {
         let pipelines;
@@ -194,82 +203,101 @@ export class DashboardPanel {
 
         for (const p of pipelines) {
           p.workspaceName = ws.displayName;
-
-          let lastRun: PipelineRun | undefined;
-
           const fav = this._storage.getFavorite(p.id);
-
-          const pollingMs = vscode.workspace
-            .getConfiguration('fabricPulse')
-            .get<number>('pollingInterval', 60) * 1000;
-          const lastFetched = this._runsFetchedAt.get(p.id) ?? 0;
-          const cacheStale = (Date.now() - lastFetched) >= pollingMs;
-
-          if (cacheStale) {
-            try {
-              const runs = await this._fabricApi.getPipelineRuns(
-                this._currentTenantId, ws.id, p.id,
-              );
-
-              if (runs.length > 0) {
-                this._storage.upsertRunsBatch(runs.map(r => ({
-                  tenantId: this._currentTenantId,
-                  workspaceId: ws.id,
-                  pipelineId: p.id,
-                  pipelineName: p.displayName,
-                  workspaceName: ws.displayName,
-                  runId: r.runId,
-                  status: r.status,
-                  startTime: r.startTime,
-                  endTime: r.endTime,
-                  durationMs: r.durationMs,
-                  errorMessage: r.errorMessage,
-                })));
-              }
-
-              this._runsFetchedAt.set(p.id, Date.now());
-              lastRun = runs[0];
-            } catch (err) {
-              console.warn(`[FabricPulse] Could not fetch runs for pipeline ${p.displayName}:`, err);
-              const localRun = this._storage.getLastRun(p.id);
-              lastRun = localRun
-                ? { id: String(localRun.id), pipelineId: p.id, runId: localRun.runId, status: localRun.status as PipelineRun['status'], startTime: localRun.startTime, endTime: localRun.endTime, durationMs: localRun.durationMs, errorMessage: localRun.errorMessage }
-                : undefined;
-            }
-          } else {
-            const localRun = this._storage.getLastRun(p.id);
-            lastRun = localRun
-              ? { id: String(localRun.id), pipelineId: p.id, runId: localRun.runId, status: localRun.status as PipelineRun['status'], startTime: localRun.startTime, endTime: localRun.endTime, durationMs: localRun.durationMs, errorMessage: localRun.errorMessage }
-              : undefined;
-          }
-
+          const localRun = this._storage.getLastRun(p.id);
+          const lastRun: PipelineRun | undefined = localRun
+            ? { id: String(localRun.id), pipelineId: p.id, runId: localRun.runId, status: localRun.status as PipelineRun['status'], startTime: localRun.startTime, endTime: localRun.endTime, durationMs: localRun.durationMs, errorMessage: localRun.errorMessage }
+            : undefined;
           const { rate } = this._storage.getSuccessRate(p.id, 7);
           const durStats = this._storage.getDurationStats(p.id);
-
-          freshPipelines.push({
-            ...p,
-            lastRun,
-            successRate7d: rate,
-            avgDurationMs: durStats.avg,
-            maxDurationMs: durStats.max,
-            minDurationMs: durStats.min,
-            isFavorite: !!fav,
-            alertEnabled: fav?.alertEnabled ?? false,
-            durationThresholdMs: fav?.durationThresholdMs,
+          allMeta.push({
+            ws,
+            pipeline: {
+              ...p,
+              lastRun,
+              successRate7d: rate,
+              avgDurationMs: durStats.avg,
+              maxDurationMs: durStats.max,
+              minDurationMs: durStats.min,
+              isFavorite: !!fav,
+              alertEnabled: fav?.alertEnabled ?? false,
+              durationThresholdMs: fav?.durationThresholdMs,
+            },
           });
         }
       }
 
-      this._pipelines = freshPipelines;
+      // Show all pipelines from cache immediately so the UI is populated
+      this._pipelines = allMeta.map(m => m.pipeline);
+      this._isFromCache = true;
       this._lastRefreshed = new Date().toISOString();
-      this._isFromCache = false;
+      this._postState();
 
+      // ── Phase 2: fetch fresh runs for stale pipelines, in batches ─────────
+      const staleMeta = allMeta.filter(m => {
+        const lastFetched = this._runsFetchedAt.get(m.pipeline.id) ?? 0;
+        return (Date.now() - lastFetched) >= pollingMs;
+      });
+
+      const useBatching = staleMeta.length > batchThreshold;
+      const totalBatches = Math.ceil(staleMeta.length / batchSize);
+
+      for (let i = 0; i < staleMeta.length; i += batchSize) {
+        if (useBatching && i > 0) {
+          await new Promise(r => setTimeout(r, batchDelayMs));
+        }
+
+        const batchNum = Math.floor(i / batchSize) + 1;
+        if (useBatching) {
+          this._batchProgress = { done: batchNum - 1, total: totalBatches };
+          this._postState();
+        }
+
+        const batch = staleMeta.slice(i, i + batchSize);
+        await Promise.all(batch.map(async ({ pipeline, ws }) => {
+          try {
+            const run = await this._fabricApi.getLastPipelineRun(this._currentTenantId, ws.id, pipeline.id);
+            if (run) {
+              this._storage.upsertRunsBatch([{
+                tenantId: this._currentTenantId,
+                workspaceId: ws.id,
+                pipelineId: pipeline.id,
+                pipelineName: pipeline.displayName,
+                workspaceName: ws.displayName,
+                runId: run.runId,
+                status: run.status,
+                startTime: run.startTime,
+                endTime: run.endTime,
+                durationMs: run.durationMs,
+                errorMessage: run.errorMessage,
+              }]);
+              const idx = this._pipelines.findIndex(x => x.id === pipeline.id);
+              if (idx !== -1) {
+                this._pipelines[idx] = { ...this._pipelines[idx], lastRun: run };
+              }
+            }
+            this._runsFetchedAt.set(pipeline.id, Date.now());
+          } catch (err) {
+            console.warn(`[FabricPulse] Could not fetch runs for pipeline ${pipeline.displayName}:`, err);
+          }
+        }));
+
+        if (useBatching) {
+          this._batchProgress = { done: batchNum, total: totalBatches };
+        }
+        this._postState();
+      }
+
+      this._batchProgress = undefined;
+      this._isFromCache = false;
+      this._lastRefreshed = new Date().toISOString();
       await this._alertService.checkAlerts(this._pipelines);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this._post({ type: 'toast', message: msg, level: 'error' });
     } finally {
       this._isLoading = false;
+      this._batchProgress = undefined;
       this._postState();
     }
   }
@@ -292,7 +320,8 @@ export class DashboardPanel {
         break;
 
       case 'refresh':
-        await this.refresh();
+        this._runsFetchedAt.clear();
+        await this.refresh(true);
         break;
 
       case 'selectTenant':
@@ -349,6 +378,50 @@ export class DashboardPanel {
         const target = this._pipelines.find(p => p.id === msg.pipelineId);
         if (!target) break;
         try {
+          const run = await this._fabricApi.getLastPipelineRun(
+            this._currentTenantId, msg.workspaceId, msg.pipelineId,
+          );
+          if (run) {
+            this._storage.upsertRunsBatch([{
+              tenantId: this._currentTenantId,
+              workspaceId: msg.workspaceId,
+              pipelineId: msg.pipelineId,
+              pipelineName: target.displayName,
+              workspaceName: target.workspaceName,
+              runId: run.runId,
+              status: run.status,
+              startTime: run.startTime,
+              endTime: run.endTime,
+              durationMs: run.durationMs,
+              errorMessage: run.errorMessage,
+            }]);
+          }
+          this._runsFetchedAt.set(msg.pipelineId, Date.now());
+          const { rate } = this._storage.getSuccessRate(msg.pipelineId, 7);
+          const durStats = this._storage.getDurationStats(msg.pipelineId);
+          const idx = this._pipelines.findIndex(p => p.id === msg.pipelineId);
+          if (idx !== -1) {
+            this._pipelines[idx] = {
+              ...this._pipelines[idx],
+              lastRun: run,
+              successRate7d: rate,
+              avgDurationMs: durStats.avg,
+              maxDurationMs: durStats.max,
+              minDurationMs: durStats.min,
+            };
+          }
+          this._postState();
+        } catch (err: unknown) {
+          this._post({ type: 'toast', message: err instanceof Error ? err.message : String(err), level: 'error' });
+        }
+        break;
+      }
+
+      case 'fetchPipelineHistory': {
+        const target = this._pipelines.find(p => p.id === msg.pipelineId);
+        if (!target) break;
+        this._post({ type: 'toast', message: `Fetching history for "${target.displayName}"…`, level: 'info' });
+        try {
           const runs = await this._fabricApi.getPipelineRuns(
             this._currentTenantId, msg.workspaceId, msg.pipelineId,
           );
@@ -368,20 +441,20 @@ export class DashboardPanel {
             })));
           }
           this._runsFetchedAt.set(msg.pipelineId, Date.now());
-          const lastRun = runs[0] as PipelineRun | undefined;
           const { rate } = this._storage.getSuccessRate(msg.pipelineId, 7);
           const durStats = this._storage.getDurationStats(msg.pipelineId);
           const idx = this._pipelines.findIndex(p => p.id === msg.pipelineId);
           if (idx !== -1) {
             this._pipelines[idx] = {
               ...this._pipelines[idx],
-              lastRun,
+              lastRun: runs[0],
               successRate7d: rate,
               avgDurationMs: durStats.avg,
               maxDurationMs: durStats.max,
               minDurationMs: durStats.min,
             };
           }
+          this._post({ type: 'toast', message: `${runs.length} runs fetched for "${target.displayName}"`, level: 'success' });
           this._postState();
         } catch (err: unknown) {
           this._post({ type: 'toast', message: err instanceof Error ? err.message : String(err), level: 'error' });
@@ -421,9 +494,46 @@ export class DashboardPanel {
       case 'viewHistory': {
         const { HistoryPanel } = await import('./HistoryPanel');
         const target = this._pipelines.find(p => p.id === msg.pipelineId);
-        if (target) {
-          HistoryPanel.createOrShow(this._extensionUri, target, this._storage);
+        if (!target) break;
+        this._post({ type: 'toast', message: `Loading history for "${msg.pipelineName}"…`, level: 'info' });
+        try {
+          const runs = await this._fabricApi.getPipelineRuns(
+            this._currentTenantId, msg.workspaceId, msg.pipelineId,
+          );
+          if (runs.length > 0) {
+            this._storage.upsertRunsBatch(runs.map(r => ({
+              tenantId: this._currentTenantId,
+              workspaceId: msg.workspaceId,
+              pipelineId: msg.pipelineId,
+              pipelineName: msg.pipelineName,
+              workspaceName: msg.workspaceName,
+              runId: r.runId,
+              status: r.status,
+              startTime: r.startTime,
+              endTime: r.endTime,
+              durationMs: r.durationMs,
+              errorMessage: r.errorMessage,
+            })));
+          }
+          this._runsFetchedAt.set(msg.pipelineId, Date.now());
+          const { rate } = this._storage.getSuccessRate(msg.pipelineId, 7);
+          const durStats = this._storage.getDurationStats(msg.pipelineId);
+          const idx = this._pipelines.findIndex(p => p.id === msg.pipelineId);
+          if (idx !== -1) {
+            this._pipelines[idx] = {
+              ...this._pipelines[idx],
+              lastRun: runs[0] ?? this._pipelines[idx].lastRun,
+              successRate7d: rate,
+              avgDurationMs: durStats.avg,
+              maxDurationMs: durStats.max,
+              minDurationMs: durStats.min,
+            };
+          }
+          this._postState();
+        } catch (err: unknown) {
+          this._post({ type: 'toast', message: err instanceof Error ? err.message : String(err), level: 'error' });
         }
+        HistoryPanel.createOrShow(this._extensionUri, target, this._storage);
         break;
       }
 
@@ -460,6 +570,7 @@ export class DashboardPanel {
       lastRefreshed: this._lastRefreshed,
       isFromCache: this._isFromCache,
       isLoading: this._isLoading,
+      batchProgress: this._batchProgress,
     };
     this._post({ type: 'updateState', state });
   }

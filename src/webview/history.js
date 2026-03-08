@@ -26,6 +26,7 @@ const dom = {
   exportLabel:  $('export-label'),
   btnCsv:       $('btn-export-csv'),
   btnJson:      $('btn-export-json'),
+  statCached:   $('stat-cached'),
   btnAddNote:   $('btn-add-note'),
   modalOverlay: $('modal-overlay'),
   modalDate:    /** @type {HTMLInputElement}  */ ($('modal-date')),
@@ -58,6 +59,10 @@ function render() {
 
   const periodLabel = { '7d': '7 days', '30d': '30 days', '90d': '90 days', 'all': 'all time' };
   dom.statPeriod.textContent = periodLabel[data.period] ?? '';
+
+  dom.statCached.textContent = data.lastCachedAt
+    ? `Cached: ${new Date(data.lastCachedAt).toLocaleString()}`
+    : '';
 
   // Period buttons
   dom.periodBtns.forEach(btn => {
