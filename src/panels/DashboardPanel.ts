@@ -43,6 +43,7 @@ export class DashboardPanel {
   private _pipelines: PipelineWithStatus[] = [];
   private _selectedWorkspaceId = '';
   private _lastRefreshed = '';
+  private _isFromCache = false;
   private _isLoading = false;
 
   /** pipelineId → epoch ms of last live API fetch for runs.
@@ -160,6 +161,7 @@ export class DashboardPanel {
           });
 
           this._lastRefreshed = new Date().toISOString();
+          this._isFromCache = true;
           await this._alertService.checkAlerts(this._pipelines);
           return; // done — no API calls made
         }
@@ -260,6 +262,7 @@ export class DashboardPanel {
 
       this._pipelines = freshPipelines;
       this._lastRefreshed = new Date().toISOString();
+      this._isFromCache = false;
 
       await this._alertService.checkAlerts(this._pipelines);
     } catch (err: unknown) {
@@ -455,6 +458,7 @@ export class DashboardPanel {
       pipelines: this._pipelines,
       selectedWorkspaceId: this._selectedWorkspaceId,
       lastRefreshed: this._lastRefreshed,
+      isFromCache: this._isFromCache,
       isLoading: this._isLoading,
     };
     this._post({ type: 'updateState', state });

@@ -15,6 +15,7 @@ let state = {
   pipelines: [],
   selectedWorkspaceId: '',
   lastRefreshed: '',
+  isFromCache: false,
   isLoading: false,
 };
 
@@ -81,7 +82,10 @@ function renderLoadingBar() {
 
 function renderLastRefreshed() {
   if (state.lastRefreshed) {
-    dom.lastRefreshed.textContent = `Updated ${formatRelative(state.lastRefreshed)}`;
+    const time = formatRelative(state.lastRefreshed);
+    dom.lastRefreshed.textContent = state.isFromCache
+      ? `Cached · ${time}`
+      : `Updated ${time}`;
   } else {
     dom.lastRefreshed.textContent = '';
   }

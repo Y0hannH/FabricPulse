@@ -32,6 +32,13 @@ body {
   flex-direction:   column;
 }
 
+#app {
+  display:        flex;
+  flex-direction: column;
+  flex:           1;
+  min-height:     0;
+}
+
 a { color: var(--fp-blue); text-decoration: none; }
 a:hover { text-decoration: underline; }
 

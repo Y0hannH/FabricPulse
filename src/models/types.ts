@@ -98,6 +98,7 @@ export interface DashboardState {
   pipelines: PipelineWithStatus[];
   selectedWorkspaceId: string;
   lastRefreshed: string;
+  isFromCache: boolean;
   isLoading: boolean;
   error?: string;
 }
