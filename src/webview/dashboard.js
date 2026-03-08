@@ -15,12 +15,16 @@ let state = {
   pipelines: [],
   selectedWorkspaceId: '',
   lastRefreshed: '',
+  nextRefreshAt: '',
   isFromCache: false,
   isLoading: false,
 };
 
 /** Local filter — round-tripped only for tenant/workspace changes that trigger an API call */
 const localFilter = { text: '', favoritesOnly: false, statusFilters: /** @type {Set<string>} */ (new Set()) };
+
+/** Whether we have already applied the default favorites-filter on first real data load */
+let _favoritesDefaultApplied = false;
 
 /** Sort state */
 const sort = { col: 'name', dir: 1 }; // dir: 1 = asc, -1 = desc
@@ -56,6 +60,15 @@ window.addEventListener('message', (/** @type {MessageEvent} */ ev) => {
   switch (msg.type) {
     case 'updateState':
       state = msg.state;
+      // Auto-enable favorites filter once on first real data load (if favorites exist)
+      if (!_favoritesDefaultApplied && state.pipelines.length > 0) {
+        _favoritesDefaultApplied = true;
+        if (state.pipelines.some(p => p.isFavorite)) {
+          localFilter.favoritesOnly = true;
+          dom.favoritesOnly.checked = true;
+          post({ type: 'setFavoritesOnly', enabled: true });
+        }
+      }
       render();
       break;
     case 'toast':
@@ -88,9 +101,11 @@ function renderLastRefreshed() {
   }
   if (state.lastRefreshed) {
     const time = formatRelative(state.lastRefreshed);
-    dom.lastRefreshed.textContent = state.isFromCache
-      ? `Cached · ${time}`
-      : `Updated ${time}`;
+    const label = state.isFromCache ? `Cached · ${time}` : `Updated ${time}`;
+    const nextPart = state.nextRefreshAt
+      ? ` · Next ${formatIn(state.nextRefreshAt)}`
+      : '';
+    dom.lastRefreshed.textContent = label + nextPart;
   } else {
     dom.lastRefreshed.textContent = '';
   }
@@ -457,6 +472,7 @@ dom.clearFilter.addEventListener('click', () => {
 
 dom.favoritesOnly.addEventListener('change', () => {
   localFilter.favoritesOnly = dom.favoritesOnly.checked;
+  post({ type: 'setFavoritesOnly', enabled: dom.favoritesOnly.checked });
   renderTable();
 });
 
@@ -502,6 +518,15 @@ function formatRelative(/** @type {string} */ iso) {
   const h = Math.floor(mins / 60);
   if (h < 24)    return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
+}
+
+function formatIn(/** @type {string} */ iso) {
+  const diff = new Date(iso).getTime() - Date.now();
+  if (diff <= 0) return 'now';
+  const mins = Math.ceil(diff / 60_000);
+  if (mins < 60) return `in ${mins}m`;
+  const h = Math.floor(mins / 60);
+  return `in ${h}h`;
 }
 
 function formatDuration(/** @type {number} */ ms) {

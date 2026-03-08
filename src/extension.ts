@@ -161,12 +161,16 @@ function startPolling(panel: DashboardPanel): void {
     const intervalSecs = vscode.workspace
       .getConfiguration('fabricPulse')
       .get<number>('pollingInterval', 60);
+    const nextAt = new Date(Date.now() + intervalSecs * 1000).toISOString();
+    DashboardPanel.currentPanel?.setNextRefreshAt(nextAt);
     _pollingTimer = setTimeout(tick, intervalSecs * 1000);
   };
 
   const intervalSecs = vscode.workspace
     .getConfiguration('fabricPulse')
     .get<number>('pollingInterval', 60);
+  const nextAt = new Date(Date.now() + intervalSecs * 1000).toISOString();
+  panel.setNextRefreshAt(nextAt);
   _pollingTimer = setTimeout(tick, intervalSecs * 1000);
 }
 

@@ -43,10 +43,12 @@ export class DashboardPanel {
   private _pipelines: PipelineWithStatus[] = [];
   private _selectedWorkspaceId = '';
   private _lastRefreshed = '';
+  private _nextRefreshAt = '';
   private _isFromCache = false;
   private _isLoading = false;
   private _batchProgress: { done: number; total: number } | undefined = undefined;
   private _disposed = false;
+  private _favoritesOnlyMode = false;
 
   /** pipelineId → epoch ms of last live API fetch for runs.
    *  Cleared when the workspace or tenant changes so the first load is always live. */
@@ -117,6 +119,11 @@ export class DashboardPanel {
 
   // ─── Public ──────────────────────────────────────────────────────────────────
 
+  public setNextRefreshAt(iso: string): void {
+    this._nextRefreshAt = iso;
+    this._postState();
+  }
+
   public async refresh(force = false): Promise<void> {
     if (this._isLoading) return; // debounce concurrent refreshes
 
@@ -136,7 +143,7 @@ export class DashboardPanel {
 
     try {
       // ── No workspace selected: serve from SQLite cache when possible ──────
-      if (!this._selectedWorkspaceId && !force) {
+      if (!this._selectedWorkspaceId && !force && !this._favoritesOnlyMode) {
         const cachedWorkspaces = this._storage.getKnownWorkspaces(this._currentTenantId);
 
         if (cachedWorkspaces.length > 0) {
@@ -572,6 +579,10 @@ export class DashboardPanel {
         await vscode.commands.executeCommand('fabricPulse.addTenant');
         break;
 
+      case 'setFavoritesOnly':
+        this._favoritesOnlyMode = msg.enabled;
+        break;
+
       case 'exportHistory': {
         const target = this._pipelines.find(p => p.id === msg.pipelineId);
         if (!target) break;
@@ -599,6 +610,7 @@ export class DashboardPanel {
       pipelines: this._pipelines,
       selectedWorkspaceId: this._selectedWorkspaceId,
       lastRefreshed: this._lastRefreshed,
+      nextRefreshAt: this._nextRefreshAt,
       isFromCache: this._isFromCache,
       isLoading: this._isLoading,
       batchProgress: this._batchProgress,

@@ -98,6 +98,7 @@ export interface DashboardState {
   pipelines: PipelineWithStatus[];
   selectedWorkspaceId: string;
   lastRefreshed: string;
+  nextRefreshAt: string;
   isFromCache: boolean;
   isLoading: boolean;
   batchProgress?: { done: number; total: number };
@@ -133,7 +134,8 @@ export type WebviewToExtMsg =
   | { type: 'addTenant' }
   | { type: 'exportHistory'; pipelineId: string }
   | { type: 'fetchPipelineHistory'; pipelineId: string; workspaceId: string }
-  | { type: 'blacklistWorkspace'; workspaceId: string; workspaceName: string };
+  | { type: 'blacklistWorkspace'; workspaceId: string; workspaceName: string }
+  | { type: 'setFavoritesOnly'; enabled: boolean };
 
 // Messages sent FROM extension TO webview (dashboard)
 export type ExtToDashMsg =
