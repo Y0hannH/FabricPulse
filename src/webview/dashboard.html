@@ -45,6 +45,13 @@
         <input type="checkbox" id="favorites-only" />
         <span>★ Favorites</span>
       </label>
+
+      <div class="status-filters" id="status-filters">
+        <button class="status-filter-btn" data-status="Failed"     title="Show failed pipelines">Failed</button>
+        <button class="status-filter-btn" data-status="Succeeded"  title="Show succeeded pipelines">Succeeded</button>
+        <button class="status-filter-btn" data-status="neverRun"   title="Show pipelines with no runs">Never run</button>
+        <button class="status-filter-btn" data-status="InProgress" title="Show in-progress pipelines">In Progress</button>
+      </div>
     </div>
 
     <div class="toolbar-right">
@@ -83,8 +90,10 @@
             <th class="col-workspace sortable" data-col="workspace">Workspace</th>
             <th class="col-status">Last Run</th>
             <th class="col-duration">Duration</th>
+            <th class="col-dur-avg" title="Average duration (all runs)">Avg</th>
+            <th class="col-dur-min" title="Min duration (succeeded only)">Min ✓</th>
+            <th class="col-dur-max" title="Max duration (succeeded only)">Max ✓</th>
             <th class="col-rate">7d Rate</th>
-            <th class="col-actions"></th>
           </tr>
         </thead>
         <tbody id="pipeline-tbody"></tbody>

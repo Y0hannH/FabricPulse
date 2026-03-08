@@ -222,6 +222,51 @@ button { cursor: pointer; font-family: inherit; font-size: inherit; }
 }
 .toggle-label input[type="checkbox"] { cursor: pointer; }
 
+/* ── Status filter pills ─────────────────────────────────────────────────────── */
+.status-filters {
+  display:     flex;
+  align-items: center;
+  gap:         3px;
+}
+
+.status-filter-btn {
+  background:    transparent;
+  border:        1px solid var(--fp-border);
+  border-radius: 3px;
+  color:         var(--vscode-descriptionForeground, #888);
+  font-size:     11px;
+  font-family:   inherit;
+  padding:       1px 7px;
+  height:        20px;
+  cursor:        pointer;
+  white-space:   nowrap;
+  transition:    background 0.12s, color 0.12s, border-color 0.12s;
+}
+.status-filter-btn:hover {
+  border-color: var(--vscode-input-border, #555);
+  color:        var(--vscode-foreground, #ccc);
+}
+.status-filter-btn[data-status="Failed"].active {
+  background:  rgba(241,76,76,0.15);
+  color:       var(--fp-red);
+  border-color: var(--fp-red);
+}
+.status-filter-btn[data-status="Succeeded"].active {
+  background:  rgba(78,201,176,0.15);
+  color:       var(--fp-green);
+  border-color: var(--fp-green);
+}
+.status-filter-btn[data-status="neverRun"].active {
+  background:  rgba(110,118,129,0.15);
+  color:       var(--fp-grey);
+  border-color: var(--fp-grey);
+}
+.status-filter-btn[data-status="InProgress"].active {
+  background:  rgba(229,164,0,0.15);
+  color:       var(--fp-orange);
+  border-color: var(--fp-orange);
+}
+
 /* ── Buttons ─────────────────────────────────────────────────────────────────── */
 .btn {
   border:        none;
@@ -355,12 +400,14 @@ button { cursor: pointer; font-family: inherit; font-size: inherit; }
 
 /* ── Column widths ───────────────────────────────────────────────────────────── */
 .col-star      { width: 28px;  text-align: center; }
-.col-name      { width: 30%;   }
-.col-workspace { width: 20%;   }
-.col-status    { width: 18%;   }
-.col-duration  { width: 80px;  text-align: right; }
-.col-rate      { width: 70px;  text-align: right; }
-.col-actions   { width: 112px; text-align: right; }
+.col-name      { width: 28%;   }
+.col-workspace { width: 18%;   }
+.col-status    { width: 16%;   }
+.col-duration  { width: 72px;  text-align: right; }
+.col-dur-avg   { width: 62px;  text-align: right; color: var(--vscode-descriptionForeground); }
+.col-dur-min   { width: 62px;  text-align: right; color: var(--vscode-descriptionForeground); }
+.col-dur-max   { width: 62px;  text-align: right; color: var(--vscode-descriptionForeground); }
+.col-rate      { width: 68px;  text-align: right; }
 
 /* ── Star button ─────────────────────────────────────────────────────────────── */
 .star-btn {
@@ -410,15 +457,32 @@ button { cursor: pointer; font-family: inherit; font-size: inherit; }
 .rate-mid  { color: var(--fp-orange); }
 .rate-low  { color: var(--fp-red); }
 
+/* ── Name cell with inline actions ───────────────────────────────────────────── */
+.name-cell {
+  display:     flex;
+  align-items: center;
+  gap:         2px;
+  min-width:   0;
+  overflow:    hidden;
+}
+
+.pipeline-name {
+  flex:          1;
+  overflow:      hidden;
+  text-overflow: ellipsis;
+  white-space:   nowrap;
+  min-width:     0;
+}
+
 /* ── Quick actions ───────────────────────────────────────────────────────────── */
 .actions {
-  display:    flex;
+  display:     flex;
   align-items: center;
-  justify-content: flex-end;
-  gap:        2px;
-  visibility: hidden;
-  opacity:    0;
-  transition: opacity 0.1s;
+  flex-shrink: 0;
+  gap:         0;
+  visibility:  hidden;
+  opacity:     0;
+  transition:  opacity 0.1s;
 }
 
 .action-btn {

@@ -184,6 +184,24 @@ export class StorageService {
     return rows.length ? this._mapRun(rows[0]) : undefined;
   }
 
+  getDurationStats(pipelineId: string): { avg: number | undefined; max: number | undefined; min: number | undefined } {
+    const result = this.db.exec(
+      `SELECT
+         AVG(duration_ms),
+         MAX(CASE WHEN status = 'Succeeded' THEN duration_ms END),
+         MIN(CASE WHEN status = 'Succeeded' THEN duration_ms END)
+       FROM pipeline_runs WHERE pipeline_id = ? AND duration_ms IS NOT NULL`,
+      [pipelineId],
+    );
+    const row = result[0]?.values[0];
+    if (!row || row[0] == null) return { avg: undefined, max: undefined, min: undefined };
+    return {
+      avg: Math.round(row[0] as number),
+      max: row[1] != null ? (row[1] as number) : undefined,
+      min: row[2] != null ? (row[2] as number) : undefined,
+    };
+  }
+
   getSuccessRate(pipelineId: string, days: number): { rate: number; total: number } {
     const since = new Date(Date.now() - days * 86_400_000).toISOString();
     const result = this.db.exec(

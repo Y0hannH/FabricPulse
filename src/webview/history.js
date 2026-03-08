@@ -77,14 +77,13 @@ function render() {
   renderAnnotations(data.annotations);
 }
 
-// ── Chart (native canvas 2D) ──────────────────────────────────────────────────
+// ── Chart (native canvas 2D — bar chart) ─────────────────────────────────────
 function drawChart(/** @type {any[]} */ runs) {
   const canvas = dom.canvas;
   const dpr = window.devicePixelRatio || 1;
 
-  // Size canvas to its CSS display size
   const rect = canvas.getBoundingClientRect();
-  const W = rect.width  || canvas.parentElement?.clientWidth || 600;
+  const W = rect.width || canvas.parentElement?.clientWidth || 600;
   const H = 160;
 
   canvas.width  = W * dpr;
@@ -101,15 +100,13 @@ function drawChart(/** @type {any[]} */ runs) {
   const cW = W - PAD.left - PAD.right;
   const cH = H - PAD.top  - PAD.bottom;
 
-  // Only runs with a measured duration
+  // Sort ascending by time; keep only runs with a duration
   const valid = runs
     .filter(r => r.durationMs != null)
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
-  // CSS variables
-  const fgColor   = getCssVar('--vscode-foreground',             '#cccccc');
-  const mutedColor= getCssVar('--vscode-descriptionForeground',  '#888888');
-  const gridColor = 'rgba(255,255,255,0.06)';
+  const mutedColor = getCssVar('--vscode-descriptionForeground', '#888888');
+  const gridColor  = 'rgba(255,255,255,0.06)';
 
   if (valid.length === 0) {
     ctx.fillStyle = mutedColor;
@@ -119,21 +116,12 @@ function drawChart(/** @type {any[]} */ runs) {
     return;
   }
 
-  const maxMs   = Math.max(...valid.map(r => r.durationMs));
-  const minTime = new Date(valid[0].startTime).getTime();
-  const maxTime = new Date(valid[valid.length - 1].startTime).getTime();
-  const timeSpan = maxTime - minTime || 1;
-
-  const mapX = (/** @type {string} */ iso) =>
-    PAD.left + ((new Date(iso).getTime() - minTime) / timeSpan) * cW;
-  const mapY = (/** @type {number} */ ms) =>
-    PAD.top + cH - (ms / maxMs) * cH;
+  const maxMs = Math.max(...valid.map(r => r.durationMs));
 
   // ── Grid lines (horizontal) ──────────────────────────────────────────────
   const gridCount = 4;
   ctx.strokeStyle = gridColor;
   ctx.lineWidth = 1;
-
   for (let i = 0; i <= gridCount; i++) {
     const y = PAD.top + (i / gridCount) * cH;
     ctx.beginPath();
@@ -141,7 +129,6 @@ function drawChart(/** @type {any[]} */ runs) {
     ctx.lineTo(PAD.left + cW, y);
     ctx.stroke();
 
-    // Y-axis label
     const val = maxMs * (1 - i / gridCount);
     ctx.fillStyle = mutedColor;
     ctx.font = '9px monospace';
@@ -149,31 +136,24 @@ function drawChart(/** @type {any[]} */ runs) {
     ctx.fillText(fmtDur(val), PAD.left - 4, y + 3);
   }
 
-  // ── Line ─────────────────────────────────────────────────────────────────
-  ctx.beginPath();
-  ctx.strokeStyle = '#4d9ce6';
-  ctx.lineWidth = 1.5;
-  ctx.lineJoin = 'round';
-  valid.forEach((r, i) => {
-    const x = mapX(r.startTime);
-    const y = mapY(r.durationMs);
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  });
-  ctx.stroke();
+  // ── Bars ─────────────────────────────────────────────────────────────────
+  const n = valid.length;
+  const totalGap = Math.max(n - 1, 0) * 2;          // 2px gap between bars
+  const barW = Math.max(2, Math.min(20, Math.floor((cW - totalGap) / n)));
+  const slotW = barW + (n > 1 ? (cW - n * barW) / (n - 1) : 0);
 
-  // ── Dots (color-coded by status) ─────────────────────────────────────────
-  valid.forEach(r => {
-    const x = mapX(r.startTime);
-    const y = mapY(r.durationMs);
-    const color = r.status === 'Succeeded' ? '#4ec9b0'
-                : r.status === 'Failed'    ? '#f14c4c'
-                : r.status === 'InProgress'? '#e5a400'
+  valid.forEach((r, i) => {
+    const barH = Math.max(1, (r.durationMs / maxMs) * cH);
+    const x = PAD.left + i * slotW;
+    const y = PAD.top + cH - barH;
+
+    const color = r.status === 'Succeeded'  ? '#4ec9b0'
+                : r.status === 'Failed'     ? '#f14c4c'
+                : r.status === 'InProgress' ? '#e5a400'
                 : '#6e7681';
 
-    ctx.beginPath();
-    ctx.arc(x, y, 3.5, 0, Math.PI * 2);
     ctx.fillStyle = color;
-    ctx.fill();
+    ctx.fillRect(x, y, barW, barH);
   });
 
   // ── X-axis date labels ────────────────────────────────────────────────────
@@ -181,11 +161,11 @@ function drawChart(/** @type {any[]} */ runs) {
   ctx.font = '9px monospace';
   ctx.textAlign = 'center';
 
-  const labelMax = Math.min(valid.length, 6);
-  const step = Math.max(1, Math.floor(valid.length / labelMax));
-  for (let i = 0; i < valid.length; i += step) {
+  const labelMax = Math.min(n, 6);
+  const step = Math.max(1, Math.floor(n / labelMax));
+  for (let i = 0; i < n; i += step) {
     const r = valid[i];
-    const x = mapX(r.startTime);
+    const x = PAD.left + i * slotW + barW / 2;
     const d = new Date(r.startTime);
     const label = `${d.getMonth() + 1}/${d.getDate()}`;
     ctx.fillText(label, x, PAD.top + cH + 18);

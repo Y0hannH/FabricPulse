@@ -19,7 +19,7 @@ let state = {
 };
 
 /** Local filter — round-tripped only for tenant/workspace changes that trigger an API call */
-const localFilter = { text: '', favoritesOnly: false };
+const localFilter = { text: '', favoritesOnly: false, statusFilters: /** @type {Set<string>} */ (new Set()) };
 
 /** Sort state */
 const sort = { col: 'name', dir: 1 }; // dir: 1 = asc, -1 = desc
@@ -130,6 +130,13 @@ function getVisible() {
   if (localFilter.favoritesOnly) {
     list = list.filter(p => p.isFavorite);
   }
+  if (localFilter.statusFilters.size > 0) {
+    list = list.filter(p => {
+      const status = p.lastRun?.status;
+      if (localFilter.statusFilters.has('neverRun') && !status) return true;
+      return status && localFilter.statusFilters.has(status);
+    });
+  }
 
   list.sort((a, b) => {
     let va = '', vb = '';
@@ -183,6 +190,10 @@ function buildRowHtml(/** @type {any} */ p) {
   const rateCls = rate == null ? '' : rate >= 90 ? 'rate-high' : rate >= 70 ? 'rate-mid' : 'rate-low';
   const rateText = rate != null ? `${rate}%` : '—';
 
+  const avgDur = p.avgDurationMs != null ? formatDuration(p.avgDurationMs) : '—';
+  const minDur = p.minDurationMs != null ? formatDuration(p.minDurationMs) : '—';
+  const maxDur = p.maxDurationMs != null ? formatDuration(p.maxDurationMs) : '—';
+
   return `
 <tr data-pid="${esc(p.id)}" data-wsid="${esc(p.workspaceId)}"
     data-pname="${esc(p.displayName)}" data-wsname="${esc(p.workspaceName)}"
@@ -194,7 +205,18 @@ function buildRowHtml(/** @type {any} */ p) {
       ${p.isFavorite ? '★' : '☆'}
     </button>
   </td>
-  <td class="col-name" title="${esc(p.displayName)}">${esc(p.displayName)}</td>
+  <td class="col-name">
+    <div class="name-cell">
+      <div class="actions">
+        <button class="action-btn" data-action="refresh-pipeline" title="Refresh this pipeline">↺</button>
+        <button class="action-btn" data-action="rerun"            title="Re-run pipeline">▶</button>
+        <button class="action-btn ${!runId ? 'disabled' : ''}"   data-action="copy"    title="Copy Run ID">📋</button>
+        <button class="action-btn" data-action="portal"           title="Open in Fabric portal">🔗</button>
+        <button class="action-btn" data-action="history"          title="View run history">📊</button>
+      </div>
+      <span class="pipeline-name" title="${esc(p.displayName)}">${esc(p.displayName)}</span>
+    </div>
+  </td>
   <td class="col-workspace muted" title="${esc(p.workspaceName)}">${esc(p.workspaceName)}</td>
   <td class="col-status">
     ${run
@@ -202,15 +224,10 @@ function buildRowHtml(/** @type {any} */ p) {
       : '<span class="muted">—</span>'}
   </td>
   <td class="col-duration" style="text-align:right">${duration}</td>
+  <td class="col-dur-avg muted" style="text-align:right" title="Avg duration (all runs)">${avgDur}</td>
+  <td class="col-dur-min muted" style="text-align:right" title="Min duration (succeeded only)">${minDur}</td>
+  <td class="col-dur-max muted" style="text-align:right" title="Max duration (succeeded only)">${maxDur}</td>
   <td class="col-rate ${rateCls}" style="text-align:right">${rateText}</td>
-  <td class="col-actions">
-    <div class="actions">
-      <button class="action-btn" data-action="rerun"   title="Re-run pipeline">▶</button>
-      <button class="action-btn ${!runId ? 'disabled' : ''}" data-action="copy" title="Copy Run ID">📋</button>
-      <button class="action-btn" data-action="portal"  title="Open in Fabric portal">🔗</button>
-      <button class="action-btn" data-action="history" title="View run history">📊</button>
-    </div>
-  </td>
 </tr>`;
 }
 
@@ -237,6 +254,11 @@ function handleRowClick(/** @type {MouseEvent} */ e) {
       // Optimistic UI: toggle starred class immediately
       btn.classList.toggle('starred');
       btn.textContent = btn.classList.contains('starred') ? '★' : '☆';
+      break;
+
+    case 'refresh-pipeline':
+      post({ type: 'refreshPipeline', pipelineId: pid, workspaceId: wsid });
+      showToast(`Refreshing "${pname}"…`, 'info');
       break;
 
     case 'rerun':
@@ -441,6 +463,21 @@ function esc(/** @type {string} */ s) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;'); // prevent single-quote breakout in HTML attributes
 }
+
+// ── Status filter buttons ─────────────────────────────────────────────────────
+document.querySelectorAll('.status-filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const status = /** @type {HTMLElement} */ (btn).dataset.status ?? '';
+    if (localFilter.statusFilters.has(status)) {
+      localFilter.statusFilters.delete(status);
+      btn.classList.remove('active');
+    } else {
+      localFilter.statusFilters.add(status);
+      btn.classList.add('active');
+    }
+    renderTable();
+  });
+});
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 post({ type: 'ready' });

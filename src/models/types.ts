@@ -37,6 +37,9 @@ export interface PipelineRun {
 export interface PipelineWithStatus extends Pipeline {
   lastRun?: PipelineRun;
   successRate7d?: number;
+  avgDurationMs?: number;
+  maxDurationMs?: number;
+  minDurationMs?: number;
   isFavorite: boolean;
   alertEnabled: boolean;
   durationThresholdMs?: number;
@@ -120,6 +123,7 @@ export type WebviewToExtMsg =
   | { type: 'toggleFavorite'; pipelineId: string; workspaceId: string }
   | { type: 'toggleWorkspaceFavorite'; workspaceId: string }
   | { type: 'rerunPipeline'; pipelineId: string; workspaceId: string }
+  | { type: 'refreshPipeline'; pipelineId: string; workspaceId: string }
   | { type: 'copyRunId'; runId: string }
   | { type: 'openInFabric'; pipelineId: string; workspaceId: string; tenantId: string }
   | { type: 'viewHistory'; pipelineId: string; workspaceId: string; pipelineName: string; workspaceName: string }

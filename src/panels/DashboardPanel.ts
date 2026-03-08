@@ -214,10 +214,15 @@ export class DashboardPanel {
           const { rate } = this._storage.getSuccessRate(p.id, 7);
           successRate7d = rate;
 
+          const durStats = this._storage.getDurationStats(p.id);
+
           freshPipelines.push({
             ...p,
             lastRun,
             successRate7d,
+            avgDurationMs: durStats.avg,
+            maxDurationMs: durStats.max,
+            minDurationMs: durStats.min,
             isFavorite: !!fav,
             alertEnabled: fav?.alertEnabled ?? false,
             durationThresholdMs: fav?.durationThresholdMs,
@@ -307,6 +312,50 @@ export class DashboardPanel {
           if (isFav) pl.alertEnabled = false;
         }
         this._postState();
+        break;
+      }
+
+      case 'refreshPipeline': {
+        const target = this._pipelines.find(p => p.id === msg.pipelineId);
+        if (!target) break;
+        try {
+          const runs = await this._fabricApi.getPipelineRuns(
+            this._currentTenantId, msg.workspaceId, msg.pipelineId,
+          );
+          if (runs.length > 0) {
+            this._storage.upsertRunsBatch(runs.map(r => ({
+              tenantId: this._currentTenantId,
+              workspaceId: msg.workspaceId,
+              pipelineId: msg.pipelineId,
+              pipelineName: target.displayName,
+              workspaceName: target.workspaceName,
+              runId: r.runId,
+              status: r.status,
+              startTime: r.startTime,
+              endTime: r.endTime,
+              durationMs: r.durationMs,
+              errorMessage: r.errorMessage,
+            })));
+          }
+          this._runsFetchedAt.set(msg.pipelineId, Date.now());
+          const lastRun = runs[0] as PipelineRun | undefined;
+          const { rate } = this._storage.getSuccessRate(msg.pipelineId, 7);
+          const durStats = this._storage.getDurationStats(msg.pipelineId);
+          const idx = this._pipelines.findIndex(p => p.id === msg.pipelineId);
+          if (idx !== -1) {
+            this._pipelines[idx] = {
+              ...this._pipelines[idx],
+              lastRun,
+              successRate7d: rate,
+              avgDurationMs: durStats.avg,
+              maxDurationMs: durStats.max,
+              minDurationMs: durStats.min,
+            };
+          }
+          this._postState();
+        } catch (err: unknown) {
+          this._post({ type: 'toast', message: err instanceof Error ? err.message : String(err), level: 'error' });
+        }
         break;
       }
 
