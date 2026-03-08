@@ -138,11 +138,35 @@ function getVisible() {
     });
   }
 
+  const STATUS_ORDER = /** @type {Record<string, number>} */ ({ 'Failed': 0, 'InProgress': 1, 'Succeeded': 2 });
+
   list.sort((a, b) => {
-    let va = '', vb = '';
-    if (sort.col === 'name') { va = a.displayName; vb = b.displayName; }
-    if (sort.col === 'workspace') { va = a.workspaceName; vb = b.workspaceName; }
-    return va.localeCompare(vb) * sort.dir;
+    switch (sort.col) {
+      case 'name':      return a.displayName.localeCompare(b.displayName) * sort.dir;
+      case 'workspace': return a.workspaceName.localeCompare(b.workspaceName) * sort.dir;
+      case 'status': {
+        const as = STATUS_ORDER[a.lastRun?.status ?? ''] ?? 3;
+        const bs = STATUS_ORDER[b.lastRun?.status ?? ''] ?? 3;
+        return (as - bs) * sort.dir;
+      }
+      case 'duration': {
+        const ad = a.lastRun?.durationMs;
+        const bd = b.lastRun?.durationMs;
+        if (ad == null && bd == null) return 0;
+        if (ad == null) return 1;
+        if (bd == null) return -1;
+        return (ad - bd) * sort.dir;
+      }
+      case 'rate': {
+        const ar = a.successRate7d;
+        const br = b.successRate7d;
+        if (ar == null && br == null) return 0;
+        if (ar == null) return 1;
+        if (br == null) return -1;
+        return (ar - br) * sort.dir;
+      }
+      default: return 0;
+    }
   });
 
   return list;
@@ -150,6 +174,8 @@ function getVisible() {
 
 // ── Table rendering ───────────────────────────────────────────────────────────
 function renderTable() {
+  updateSortArrows();
+
   if (state.tenants.length === 0) {
     dom.emptyTenants.classList.remove('hidden');
     dom.tableWrap.classList.add('hidden');
@@ -281,6 +307,15 @@ function handleRowClick(/** @type {MouseEvent} */ e) {
 }
 
 // ── Sort column headers ───────────────────────────────────────────────────────
+function updateSortArrows() {
+  document.querySelectorAll('th.sortable').forEach(th => {
+    const arrow = /** @type {HTMLElement|null} */ (th.querySelector('.sort-arrow'));
+    if (!arrow) return;
+    const col = /** @type {HTMLElement} */ (th).dataset.col;
+    arrow.textContent = col === sort.col ? (sort.dir === 1 ? '▾' : '▴') : '';
+  });
+}
+
 document.querySelectorAll('.sortable').forEach(th => {
   th.addEventListener('click', () => {
     const col = /** @type {HTMLElement} */ (th).dataset.col ?? '';
