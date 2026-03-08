@@ -46,6 +46,7 @@ export class DashboardPanel {
   private _isFromCache = false;
   private _isLoading = false;
   private _batchProgress: { done: number; total: number } | undefined = undefined;
+  private _disposed = false;
 
   /** pipelineId → epoch ms of last live API fetch for runs.
    *  Cleared when the workspace or tenant changes so the first load is always live. */
@@ -604,6 +605,7 @@ export class DashboardPanel {
   }
 
   private _post(msg: ExtToDashMsg): void {
+    if (this._disposed) { return; }
     this._panel.webview.postMessage(msg);
   }
 
@@ -634,6 +636,7 @@ export class DashboardPanel {
   // ─── Dispose ─────────────────────────────────────────────────────────────────
 
   public dispose(): void {
+    this._disposed = true;
     DashboardPanel.currentPanel = undefined;
     this._panel.dispose();
     this._disposables.forEach(d => d.dispose());
