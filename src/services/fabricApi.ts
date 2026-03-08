@@ -3,6 +3,44 @@ import { AuthService } from './authService';
 import { Workspace, Pipeline, PipelineRun, RunStatus } from '../models/types';
 
 const BASE_URL = 'https://api.fabric.microsoft.com/v1';
+const MAX_RETRIES = 3;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/** Wraps a fetch call with automatic retry on 429 (rate limit).
+ *  Reads the Retry-After header (seconds) and waits before retrying.
+ *  Falls back to exponential backoff if the header is absent. */
+async function fetchWithRetry(
+  fn: () => Promise<import('node-fetch').Response>,
+  label: string,
+): Promise<import('node-fetch').Response> {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const response = await fn();
+
+    if (response.status !== 429) {
+      return response;
+    }
+
+    if (attempt === MAX_RETRIES) {
+      // Return the 429 response so callers can surface the error normally
+      return response;
+    }
+
+    const retryAfterHeader = response.headers.get('Retry-After');
+    const retrySecs = retryAfterHeader ? parseInt(retryAfterHeader, 10) : NaN;
+    const waitMs = isNaN(retrySecs)
+      ? Math.min(1000 * 2 ** attempt, 30_000) // exponential backoff, capped at 30 s
+      : retrySecs * 1000;
+
+    console.warn(`[FabricPulse] 429 rate limit on ${label} — retrying in ${waitMs}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+    await sleep(waitMs);
+  }
+
+  // Should never reach here but TypeScript requires a return
+  return fn();
+}
 
 interface FabricListResponse<T> {
   value: T[];
@@ -43,14 +81,17 @@ export class FabricApiService {
     const token = await this.auth.getToken(tenantId);
     const url = `${BASE_URL}${path}`;
 
-    const response = await fetch(url, {
-      method: options?.method ?? 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: options?.body,
-    });
+    const response = await fetchWithRetry(
+      () => fetch(url, {
+        method: options?.method ?? 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: options?.body,
+      }),
+      path.split('?')[0],
+    );
 
     if (!response.ok) {
       // If unauthorized, clear the credential so it gets refreshed on next call
@@ -85,12 +126,14 @@ export class FabricApiService {
         break;
       }
 
-      const response = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
+      const response = await fetchWithRetry(
+        () => fetch(url, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        }),
+        path.split('?')[0],
+      );
 
       if (!response.ok) {
-        const text = await response.text().catch(() => '');
         // Don't forward raw API error bodies to UI — they may contain internal details
         throw new Error(`Fabric API error ${response.status} on ${path.split('?')[0]}`);
       }
