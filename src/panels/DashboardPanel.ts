@@ -126,6 +126,47 @@ export class DashboardPanel {
     this._postState();
 
     try {
+      // ── No workspace selected: serve from SQLite cache when possible ──────
+      if (!this._selectedWorkspaceId) {
+        const cachedWorkspaces = this._storage.getKnownWorkspaces(this._currentTenantId);
+
+        if (cachedWorkspaces.length > 0) {
+          // Cache is populated — rebuild the view entirely from SQLite, zero API calls
+          this._workspaces = cachedWorkspaces.map(ws => ({
+            ...ws,
+            isFavorite: this._storage.isWorkspaceFavorite(ws.id),
+          }));
+
+          const cachedPipelines = this._storage.getKnownPipelines(this._currentTenantId);
+          this._pipelines = cachedPipelines.map(p => {
+            const fav = this._storage.getFavorite(p.id);
+            const localRun = this._storage.getLastRun(p.id);
+            const lastRun: PipelineRun | undefined = localRun
+              ? { id: String(localRun.id), pipelineId: p.id, runId: localRun.runId, status: localRun.status as PipelineRun['status'], startTime: localRun.startTime, endTime: localRun.endTime, durationMs: localRun.durationMs, errorMessage: localRun.errorMessage }
+              : undefined;
+            const { rate } = this._storage.getSuccessRate(p.id, 7);
+            const durStats = this._storage.getDurationStats(p.id);
+            return {
+              ...p,
+              lastRun,
+              successRate7d: rate,
+              avgDurationMs: durStats.avg,
+              maxDurationMs: durStats.max,
+              minDurationMs: durStats.min,
+              isFavorite: !!fav,
+              alertEnabled: fav?.alertEnabled ?? false,
+              durationThresholdMs: fav?.durationThresholdMs,
+            };
+          });
+
+          this._lastRefreshed = new Date().toISOString();
+          await this._alertService.checkAlerts(this._pipelines);
+          return; // done — no API calls made
+        }
+        // Cache empty (first launch) → fall through to seed it via API
+      }
+
+      // ── Workspace selected (or cache empty on first launch) ───────────────
       const rawWorkspaces = await this._fabricApi.getWorkspaces(this._currentTenantId);
       this._workspaces = rawWorkspaces.map(ws => ({
         ...ws,
@@ -153,32 +194,23 @@ export class DashboardPanel {
           p.workspaceName = ws.displayName;
 
           let lastRun: PipelineRun | undefined;
-          let successRate7d: number | undefined;
 
           const fav = this._storage.getFavorite(p.id);
 
-          // Decide whether to hit the API or serve from the local SQLite cache.
-          // Rules:
-          //  - No workspace selected + not a favorite → always use cache (avoids
-          //    N×API calls across all workspaces on every tick)
-          //  - Workspace selected or favorite → fetch live on first load, then
-          //    serve from cache until the polling interval has elapsed
           const pollingMs = vscode.workspace
             .getConfiguration('fabricPulse')
             .get<number>('pollingInterval', 60) * 1000;
           const lastFetched = this._runsFetchedAt.get(p.id) ?? 0;
           const cacheStale = (Date.now() - lastFetched) >= pollingMs;
-          const wantsLive = !!this._selectedWorkspaceId || !!fav;
-          const fetchLive = wantsLive && cacheStale;
 
-          if (fetchLive) {
+          if (cacheStale) {
             try {
               const runs = await this._fabricApi.getPipelineRuns(
                 this._currentTenantId, ws.id, p.id,
               );
 
               if (runs.length > 0) {
-                const storedRuns = runs.map(r => ({
+                this._storage.upsertRunsBatch(runs.map(r => ({
                   tenantId: this._currentTenantId,
                   workspaceId: ws.id,
                   pipelineId: p.id,
@@ -190,11 +222,10 @@ export class DashboardPanel {
                   endTime: r.endTime,
                   durationMs: r.durationMs,
                   errorMessage: r.errorMessage,
-                }));
-                this._storage.upsertRunsBatch(storedRuns);
+                })));
               }
 
-              this._runsFetchedAt.set(p.id, Date.now()); // mark as fresh
+              this._runsFetchedAt.set(p.id, Date.now());
               lastRun = runs[0];
             } catch (err) {
               console.warn(`[FabricPulse] Could not fetch runs for pipeline ${p.displayName}:`, err);
@@ -204,7 +235,6 @@ export class DashboardPanel {
                 : undefined;
             }
           } else {
-            // Use local DB — no API call
             const localRun = this._storage.getLastRun(p.id);
             lastRun = localRun
               ? { id: String(localRun.id), pipelineId: p.id, runId: localRun.runId, status: localRun.status as PipelineRun['status'], startTime: localRun.startTime, endTime: localRun.endTime, durationMs: localRun.durationMs, errorMessage: localRun.errorMessage }
@@ -212,14 +242,12 @@ export class DashboardPanel {
           }
 
           const { rate } = this._storage.getSuccessRate(p.id, 7);
-          successRate7d = rate;
-
           const durStats = this._storage.getDurationStats(p.id);
 
           freshPipelines.push({
             ...p,
             lastRun,
-            successRate7d,
+            successRate7d: rate,
             avgDurationMs: durStats.avg,
             maxDurationMs: durStats.max,
             minDurationMs: durStats.min,
@@ -233,7 +261,6 @@ export class DashboardPanel {
       this._pipelines = freshPipelines;
       this._lastRefreshed = new Date().toISOString();
 
-      // Check alerts for favorites
       await this._alertService.checkAlerts(this._pipelines);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

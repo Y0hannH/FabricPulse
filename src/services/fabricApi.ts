@@ -126,8 +126,9 @@ export class FabricApiService {
         break;
       }
 
+      const currentUrl = url; // capture for closure — url is string here (while guard)
       const response = await fetchWithRetry(
-        () => fetch(url, {
+        () => fetch(currentUrl, {
           headers: { 'Authorization': `Bearer ${token}` },
         }),
         path.split('?')[0],

@@ -229,6 +229,37 @@ export class StorageService {
     return { total: (row?.[0] as number) ?? 0, failed: (row?.[1] as number) ?? 0 };
   }
 
+  /** Returns the distinct set of workspaces seen in pipeline_runs for a given tenant.
+   *  Used to populate the workspace picker from cache when no live fetch is needed. */
+  getKnownWorkspaces(tenantId: string): { id: string; displayName: string; tenantId: string }[] {
+    const result = this.db.exec(
+      `SELECT DISTINCT workspace_id, workspace_name FROM pipeline_runs WHERE tenant_id = ?`,
+      [tenantId],
+    );
+    return this._rows(result).map(r => ({
+      id:          r['workspace_id'] as string,
+      displayName: r['workspace_name'] as string,
+      tenantId,
+    }));
+  }
+
+  /** Returns the distinct set of pipelines seen in pipeline_runs for a given tenant.
+   *  Used to rebuild the dashboard view from cache without calling the Fabric API. */
+  getKnownPipelines(tenantId: string): { id: string; displayName: string; workspaceId: string; workspaceName: string; tenantId: string }[] {
+    const result = this.db.exec(
+      `SELECT DISTINCT pipeline_id, pipeline_name, workspace_id, workspace_name
+       FROM pipeline_runs WHERE tenant_id = ?`,
+      [tenantId],
+    );
+    return this._rows(result).map(r => ({
+      id:            r['pipeline_id'] as string,
+      displayName:   r['pipeline_name'] as string,
+      workspaceId:   r['workspace_id'] as string,
+      workspaceName: r['workspace_name'] as string,
+      tenantId,
+    }));
+  }
+
   // ─── favorites ────────────────────────────────────────────────────────────
 
   getFavorites(): Favorite[] {
