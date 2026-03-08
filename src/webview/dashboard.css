@@ -13,6 +13,7 @@
   --fp-red:     #f14c4c;
   --fp-orange:  #e5a400;
   --fp-blue:    #4d9ce6;
+  --fp-purple:  #b180d7;
   --fp-grey:    #6e7681;
   --fp-star:    #e5a400;
   --fp-border:  var(--vscode-panel-border, #3c3c3c);
@@ -288,6 +289,76 @@ button { cursor: pointer; font-family: inherit; font-size: inherit; }
   border-color: var(--fp-orange);
 }
 
+/* ── Toolbar group separator ─────────────────────────────────────────────────── */
+.filter-sep {
+  display:    block;
+  width:      1px;
+  height:     16px;
+  background: var(--fp-border);
+  flex-shrink: 0;
+  align-self: center;
+  margin:     0 2px;
+}
+
+/* ── Type filter pills ───────────────────────────────────────────────────────── */
+.type-filters {
+  display:     flex;
+  align-items: center;
+  gap:         2px;
+}
+
+.type-filter-btn {
+  background:    transparent;
+  border:        1px solid var(--fp-border);
+  border-radius: 3px;
+  color:         var(--vscode-descriptionForeground, #888);
+  font-size:     11px;
+  font-family:   inherit;
+  padding:       1px 7px;
+  height:        20px;
+  cursor:        pointer;
+  white-space:   nowrap;
+  transition:    background 0.12s, color 0.12s, border-color 0.12s;
+}
+.type-filter-btn:hover {
+  border-color: var(--vscode-input-border, #555);
+  color:        var(--vscode-foreground, #ccc);
+}
+.type-filter-btn.active {
+  background:   rgba(110,118,129,0.15);
+  color:        var(--vscode-foreground, #ccc);
+  border-color: var(--vscode-input-border, #555);
+}
+.type-filter-btn[data-itype="pipeline"].active {
+  background:   rgba(77,156,230,0.15);
+  color:        var(--fp-blue);
+  border-color: var(--fp-blue);
+}
+.type-filter-btn[data-itype="semanticModel"].active {
+  background:   rgba(177,128,215,0.15);
+  color:        var(--fp-purple);
+  border-color: var(--fp-purple);
+}
+
+/* ── Item type badges ────────────────────────────────────────────────────────── */
+.item-type-badge {
+  display:       inline-block;
+  padding:       1px 5px;
+  border-radius: 3px;
+  font-size:     10px;
+  font-weight:   600;
+  letter-spacing: 0.2px;
+  white-space:   nowrap;
+}
+.item-type-pipeline {
+  background: rgba(77,156,230,0.12);
+  color:      var(--fp-blue);
+}
+.item-type-model {
+  background: rgba(177,128,215,0.12);
+  color:      var(--fp-purple);
+}
+
 /* ── Buttons ─────────────────────────────────────────────────────────────────── */
 .btn {
   border:        none;
@@ -421,7 +492,8 @@ button { cursor: pointer; font-family: inherit; font-size: inherit; }
 
 /* ── Column widths ───────────────────────────────────────────────────────────── */
 .col-star      { width: 28px;  text-align: center; }
-.col-name      { width: 28%;   }
+.col-type      { width: 64px;  text-align: center; }
+.col-name      { width: 26%;   }
 .col-workspace { width: 18%;   }
 .col-status    { width: 16%;   }
 .col-duration  { width: 72px;  text-align: right; }

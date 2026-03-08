@@ -37,20 +37,30 @@
       </div>
 
       <div class="search-wrap">
-        <input type="text" id="filter-input" class="input" placeholder="Filter pipelines…" autocomplete="off" />
+        <input type="text" id="filter-input" class="input" placeholder="Filter items…" autocomplete="off" />
         <button id="btn-clear-filter" class="btn-icon" title="Clear filter" style="display:none">✕</button>
       </div>
 
-      <label class="toggle-label" title="Show only starred pipelines">
+      <label class="toggle-label" title="Show only starred items">
         <input type="checkbox" id="favorites-only" />
         <span>★ Favorites</span>
       </label>
 
+      <span class="filter-sep"></span>
+
+      <div class="type-filters" id="type-filters">
+        <button class="type-filter-btn active" data-itype="all"           title="Show all item types">All</button>
+        <button class="type-filter-btn"         data-itype="pipeline"     title="Show pipelines only">Pipeline</button>
+        <button class="type-filter-btn"         data-itype="semanticModel" title="Show semantic models only">Model</button>
+      </div>
+
+      <span class="filter-sep"></span>
+
       <div class="status-filters" id="status-filters">
-        <button class="status-filter-btn" data-status="Failed"     title="Show failed pipelines">Failed</button>
-        <button class="status-filter-btn" data-status="Succeeded"  title="Show succeeded pipelines">Succeeded</button>
-        <button class="status-filter-btn" data-status="neverRun"   title="Show pipelines with no runs">Never run</button>
-        <button class="status-filter-btn" data-status="InProgress" title="Show in-progress pipelines">In Progress</button>
+        <button class="status-filter-btn" data-status="Failed"     title="Show failed items">Failed</button>
+        <button class="status-filter-btn" data-status="Succeeded"  title="Show succeeded items">Succeeded</button>
+        <button class="status-filter-btn" data-status="neverRun"   title="Show items with no runs">Never run</button>
+        <button class="status-filter-btn" data-status="InProgress" title="Show in-progress items">In Progress</button>
       </div>
     </div>
 
@@ -86,7 +96,8 @@
         <thead>
           <tr>
             <th class="col-star" title="Favorite"></th>
-            <th class="col-name sortable" data-col="name">Pipeline <span class="sort-arrow">▾</span></th>
+            <th class="col-type" title="Item type"></th>
+            <th class="col-name sortable" data-col="name">Name <span class="sort-arrow">▾</span></th>
             <th class="col-workspace sortable" data-col="workspace">Workspace <span class="sort-arrow"></span></th>
             <th class="col-status sortable" data-col="status">Last Run <span class="sort-arrow"></span></th>
             <th class="col-duration sortable" data-col="duration">Duration <span class="sort-arrow"></span></th>
@@ -94,13 +105,13 @@
             <th class="col-dur-min" title="Min duration (succeeded only)">Min ✓</th>
             <th class="col-dur-max" title="Max duration (succeeded only)">Max ✓</th>
             <th class="col-rate sortable" data-col="rate">7d Rate <span class="sort-arrow"></span></th>
-            <th class="col-runs" title="Total runs in local cache">Cached</th>
+            <th class="col-runs" title="Total runs in local cache">Runs</th>
           </tr>
         </thead>
         <tbody id="pipeline-tbody"></tbody>
       </table>
 
-      <div id="no-results" class="no-results hidden">No pipelines match the current filters.</div>
+      <div id="no-results" class="no-results hidden">No items match the current filters.</div>
     </div>
 
   </main>

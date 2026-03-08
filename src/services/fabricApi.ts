@@ -155,6 +155,32 @@ export class FabricApiService {
     return results;
   }
 
+  /** Shared run-mapping logic for both pipeline and semantic model jobs/instances responses. */
+  private _mapRuns(items: FabricRun[], itemId: string): PipelineRun[] {
+    const runs = items.map(r => {
+      const startIso = r.startTimeUtc ? asUtcIso(r.startTimeUtc) : undefined;
+      const endIso   = r.endTimeUtc   ? asUtcIso(r.endTimeUtc)   : undefined;
+      const start = startIso ? new Date(startIso).getTime() : undefined;
+      const end   = endIso   ? new Date(endIso).getTime()   : undefined;
+      const durationMs = start !== undefined && end !== undefined ? end - start : undefined;
+
+      return {
+        id: r.id,
+        pipelineId: itemId,
+        runId: r.id,
+        status: this.normalizeStatus(r.status),
+        startTime: startIso ?? new Date().toISOString(),
+        endTime: endIso,
+        durationMs,
+        errorMessage: r.failureReason?.message,
+      };
+    });
+
+    // Newest first so runs[0] is always the most recent execution
+    runs.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+    return runs;
+  }
+
   // ─── Public API ─────────────────────────────────────────────────────────────
 
   async getWorkspaces(tenantId: string): Promise<Workspace[]> {
@@ -176,6 +202,19 @@ export class FabricApiService {
       workspaceId,
       workspaceName: '', // caller fills this in
       tenantId,
+      itemType: 'pipeline' as const,
+    }));
+  }
+
+  async getSemanticModels(tenantId: string, workspaceId: string): Promise<Pipeline[]> {
+    const items = await this.listAll<FabricPipeline>(tenantId, `/workspaces/${workspaceId}/semanticModels`);
+    return items.map(p => ({
+      id: p.id,
+      displayName: p.displayName,
+      workspaceId,
+      workspaceName: '', // caller fills this in
+      tenantId,
+      itemType: 'semanticModel' as const,
     }));
   }
 
@@ -184,34 +223,19 @@ export class FabricApiService {
     workspaceId: string,
     pipelineId: string,
   ): Promise<PipelineRun[]> {
-    // The jobs/instances endpoint does not support startTime/endTime filters.
-    // Fetch all available instances then sort client-side newest-first.
     const path = `/workspaces/${workspaceId}/dataPipelines/${pipelineId}/jobs/instances`;
-
     const items = await this.listAll<FabricRun>(tenantId, path);
+    return this._mapRuns(items, pipelineId);
+  }
 
-    const runs = items.map(r => {
-      const startIso = r.startTimeUtc ? asUtcIso(r.startTimeUtc) : undefined;
-      const endIso   = r.endTimeUtc   ? asUtcIso(r.endTimeUtc)   : undefined;
-      const start = startIso ? new Date(startIso).getTime() : undefined;
-      const end   = endIso   ? new Date(endIso).getTime()   : undefined;
-      const durationMs = start !== undefined && end !== undefined ? end - start : undefined;
-
-      return {
-        id: r.id,
-        pipelineId,
-        runId: r.id,
-        status: this.normalizeStatus(r.status),
-        startTime: startIso ?? new Date().toISOString(),
-        endTime: endIso,
-        durationMs,
-        errorMessage: r.failureReason?.message,
-      };
-    });
-
-    // Newest first so runs[0] is always the most recent execution
-    runs.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
-    return runs;
+  async getSemanticModelRuns(
+    tenantId: string,
+    workspaceId: string,
+    modelId: string,
+  ): Promise<PipelineRun[]> {
+    const path = `/workspaces/${workspaceId}/semanticModels/${modelId}/jobs/instances`;
+    const items = await this.listAll<FabricRun>(tenantId, path);
+    return this._mapRuns(items, modelId);
   }
 
   /** Fetches only the first page of runs and returns the most recent one.
@@ -226,26 +250,19 @@ export class FabricApiService {
     const data = await this.request<FabricListResponse<FabricRun>>(tenantId, path);
     const items = data.value ?? [];
     if (items.length === 0) return undefined;
+    return this._mapRuns(items, pipelineId)[0];
+  }
 
-    const runs = items.map(r => {
-      const startIso = r.startTimeUtc ? asUtcIso(r.startTimeUtc) : undefined;
-      const endIso   = r.endTimeUtc   ? asUtcIso(r.endTimeUtc)   : undefined;
-      const start = startIso ? new Date(startIso).getTime() : undefined;
-      const end   = endIso   ? new Date(endIso).getTime()   : undefined;
-      return {
-        id: r.id,
-        pipelineId,
-        runId: r.id,
-        status: this.normalizeStatus(r.status),
-        startTime: startIso ?? new Date().toISOString(),
-        endTime: endIso,
-        durationMs: start !== undefined && end !== undefined ? end - start : undefined,
-        errorMessage: r.failureReason?.message,
-      };
-    });
-
-    runs.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
-    return runs[0];
+  async getLastSemanticModelRun(
+    tenantId: string,
+    workspaceId: string,
+    modelId: string,
+  ): Promise<PipelineRun | undefined> {
+    const path = `/workspaces/${workspaceId}/semanticModels/${modelId}/jobs/instances`;
+    const data = await this.request<FabricListResponse<FabricRun>>(tenantId, path);
+    const items = data.value ?? [];
+    if (items.length === 0) return undefined;
+    return this._mapRuns(items, modelId)[0];
   }
 
   /** Returns the new job instance ID */
@@ -258,6 +275,16 @@ export class FabricApiService {
     return result.id;
   }
 
+  /** Triggers a semantic model refresh. Returns the new job instance ID. */
+  async triggerSemanticModelRefresh(tenantId: string, workspaceId: string, modelId: string): Promise<string> {
+    const result = await this.request<{ id: string }>(
+      tenantId,
+      `/workspaces/${workspaceId}/semanticModels/${modelId}/jobs/instances?jobType=DefaultRefresh`,
+      { method: 'POST', body: '{}' },
+    );
+    return result.id;
+  }
+
   private normalizeStatus(raw: string): RunStatus {
     switch (raw?.toLowerCase()) {
       case 'succeeded':
@@ -265,9 +292,11 @@ export class FabricApiService {
       case 'failed':      return 'Failed';
       case 'inprogress':
       case 'in_progress':
-      case 'running':     return 'InProgress';
+      case 'running':
+      case 'unknown':     return 'InProgress';  // semantic model refresh in-progress state
       case 'cancelled':
-      case 'canceled':    return 'Cancelled';
+      case 'canceled':
+      case 'disabled':    return 'Cancelled';   // semantic model disabled state
       case 'queued':
       case 'dequeued':    return 'Queued';
       default:            return 'NotStarted';

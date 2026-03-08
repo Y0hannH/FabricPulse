@@ -132,6 +132,13 @@ export class StorageService {
       this.db.run('UPDATE schema_version SET version = 2');
       this._flush();
     }
+    if (current < 3) {
+      // Add item_type column to pipeline_runs and favorites for semantic model support
+      try { this.db.run("ALTER TABLE pipeline_runs ADD COLUMN item_type TEXT DEFAULT 'pipeline'"); } catch { /* already exists */ }
+      try { this.db.run("ALTER TABLE favorites ADD COLUMN item_type TEXT DEFAULT 'pipeline'"); } catch { /* already exists */ }
+      this.db.run('UPDATE schema_version SET version = 3');
+      this._flush();
+    }
   }
 
   // ─── pipeline_runs ────────────────────────────────────────────────────────
@@ -140,11 +147,11 @@ export class StorageService {
     this.db.run(
       `INSERT OR REPLACE INTO pipeline_runs
          (tenant_id, workspace_id, pipeline_id, pipeline_name, workspace_name,
-          run_id, status, start_time, end_time, duration_ms, error_message)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+          run_id, status, start_time, end_time, duration_ms, error_message, item_type)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
       [run.tenantId, run.workspaceId, run.pipelineId, run.pipelineName, run.workspaceName,
        run.runId, run.status, run.startTime ?? null, run.endTime ?? null,
-       run.durationMs ?? null, run.errorMessage ?? null],
+       run.durationMs ?? null, run.errorMessage ?? null, run.itemType ?? 'pipeline'],
     );
     this._flush();
   }
@@ -156,11 +163,11 @@ export class StorageService {
       this.db.run(
         `INSERT OR REPLACE INTO pipeline_runs
            (tenant_id, workspace_id, pipeline_id, pipeline_name, workspace_name,
-            run_id, status, start_time, end_time, duration_ms, error_message)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+            run_id, status, start_time, end_time, duration_ms, error_message, item_type)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
         [run.tenantId, run.workspaceId, run.pipelineId, run.pipelineName, run.workspaceName,
          run.runId, run.status, run.startTime ?? null, run.endTime ?? null,
-         run.durationMs ?? null, run.errorMessage ?? null],
+         run.durationMs ?? null, run.errorMessage ?? null, run.itemType ?? 'pipeline'],
       );
     }
     this.db.run('COMMIT');
@@ -251,11 +258,12 @@ export class StorageService {
     }));
   }
 
-  /** Returns the distinct set of pipelines seen in pipeline_runs for a given tenant.
+  /** Returns the distinct set of items (pipelines + semantic models) seen in pipeline_runs for a given tenant.
    *  Used to rebuild the dashboard view from cache without calling the Fabric API. */
-  getKnownPipelines(tenantId: string): { id: string; displayName: string; workspaceId: string; workspaceName: string; tenantId: string }[] {
+  getKnownPipelines(tenantId: string): { id: string; displayName: string; workspaceId: string; workspaceName: string; tenantId: string; itemType: string }[] {
     const result = this.db.exec(
-      `SELECT DISTINCT pipeline_id, pipeline_name, workspace_id, workspace_name
+      `SELECT DISTINCT pipeline_id, pipeline_name, workspace_id, workspace_name,
+              COALESCE(item_type, 'pipeline') AS item_type
        FROM pipeline_runs WHERE tenant_id = ?`,
       [tenantId],
     );
@@ -265,6 +273,7 @@ export class StorageService {
       workspaceId:   r['workspace_id'] as string,
       workspaceName: r['workspace_name'] as string,
       tenantId,
+      itemType:      (r['item_type'] as string) ?? 'pipeline',
     }));
   }
 
@@ -288,8 +297,8 @@ export class StorageService {
 
   addFavorite(fav: Omit<Favorite, 'id'>): void {
     this.db.run(
-      'INSERT OR IGNORE INTO favorites (tenant_id, workspace_id, pipeline_id, alert_enabled, duration_threshold_ms) VALUES (?,?,?,?,?)',
-      [fav.tenantId, fav.workspaceId, fav.pipelineId, fav.alertEnabled ? 1 : 0, fav.durationThresholdMs ?? null],
+      'INSERT OR IGNORE INTO favorites (tenant_id, workspace_id, pipeline_id, alert_enabled, duration_threshold_ms, item_type) VALUES (?,?,?,?,?,?)',
+      [fav.tenantId, fav.workspaceId, fav.pipelineId, fav.alertEnabled ? 1 : 0, fav.durationThresholdMs ?? null, fav.itemType ?? 'pipeline'],
     );
     this._flush();
   }
@@ -434,6 +443,7 @@ export class StorageService {
       durationMs:    (r['duration_ms'] as number | null) ?? undefined,
       errorMessage:  (r['error_message'] as string | null) ?? undefined,
       createdAt:     (r['created_at'] as string | null) ?? undefined,
+      itemType:      (r['item_type'] as string | null) ?? 'pipeline',
     };
   }
 
@@ -445,6 +455,7 @@ export class StorageService {
       pipelineId:          r['pipeline_id'] as string,
       alertEnabled:        (r['alert_enabled'] as number) === 1,
       durationThresholdMs: (r['duration_threshold_ms'] as number | null) ?? undefined,
+      itemType:            (r['item_type'] as string | null) ?? 'pipeline',
     };
   }
 

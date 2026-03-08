@@ -21,7 +21,12 @@ let state = {
 };
 
 /** Local filter — round-tripped only for tenant/workspace changes that trigger an API call */
-const localFilter = { text: '', favoritesOnly: false, statusFilters: /** @type {Set<string>} */ (new Set()) };
+const localFilter = {
+  text: '',
+  favoritesOnly: false,
+  statusFilters: /** @type {Set<string>} */ (new Set()),
+  itemType: 'all', // 'all' | 'pipeline' | 'semanticModel'
+};
 
 /** Whether we have already applied the default favorites-filter on first real data load */
 let _favoritesDefaultApplied = false;
@@ -113,7 +118,6 @@ function renderLastRefreshed() {
 
 function renderToolbar() {
   // Tenant select
-  const currentTenant = dom.tenantSelect.value;
   dom.tenantSelect.innerHTML = '';
   if (state.tenants.length === 0) {
     dom.tenantSelect.innerHTML = '<option value="">— No tenants —</option>';
@@ -153,6 +157,10 @@ function getVisible() {
   }
   if (localFilter.favoritesOnly) {
     list = list.filter(p => p.isFavorite);
+  }
+  if (localFilter.itemType !== 'all') {
+    const target = localFilter.itemType;
+    list = list.filter(p => (p.itemType ?? 'pipeline') === target);
   }
   if (localFilter.statusFilters.size > 0) {
     list = list.filter(p => {
@@ -218,7 +226,6 @@ function renderTable() {
   dom.noResults.classList.add('hidden');
 
   // Diff-based update: only re-render if data changed
-  const existingRows = /** @type {HTMLElement[]} */ ([...dom.tbody.querySelectorAll('tr')]);
   const newHtml = visible.map(buildRowHtml).join('');
 
   // Simple check: if innerHTML is unchanged don't re-set (avoids flickering)
@@ -235,6 +242,7 @@ function buildRowHtml(/** @type {any} */ p) {
   const timeAgo = run?.startTime ? formatRelative(run.startTime) : '';
   const duration = run?.durationMs != null ? formatDuration(run.durationMs) : '—';
   const runId = run?.runId ?? '';
+  const isModel = (p.itemType ?? 'pipeline') === 'semanticModel';
 
   const rate = p.successRate7d;
   const rateCls = rate == null ? '' : rate >= 90 ? 'rate-high' : rate >= 70 ? 'rate-mid' : 'rate-low';
@@ -244,10 +252,17 @@ function buildRowHtml(/** @type {any} */ p) {
   const minDur = p.minDurationMs != null ? formatDuration(p.minDurationMs) : '—';
   const maxDur = p.maxDurationMs != null ? formatDuration(p.maxDurationMs) : '—';
 
+  const typeBadge = isModel
+    ? `<span class="item-type-badge item-type-model" title="Semantic Model">Model</span>`
+    : `<span class="item-type-badge item-type-pipeline" title="Data Pipeline">Pipeline</span>`;
+
+  const rerunTitle = isModel ? 'Trigger refresh' : 'Re-run pipeline';
+  const rerunIcon = isModel ? '⟳' : '▶';
+
   return `
 <tr data-pid="${esc(p.id)}" data-wsid="${esc(p.workspaceId)}"
     data-pname="${esc(p.displayName)}" data-wsname="${esc(p.workspaceName)}"
-    data-runid="${esc(runId)}">
+    data-runid="${esc(runId)}" data-itype="${esc(p.itemType ?? 'pipeline')}">
   <td class="col-star">
     <button class="star-btn ${p.isFavorite ? 'starred' : ''}"
             data-action="star"
@@ -255,12 +270,13 @@ function buildRowHtml(/** @type {any} */ p) {
       ${p.isFavorite ? '★' : '☆'}
     </button>
   </td>
+  <td class="col-type">${typeBadge}</td>
   <td class="col-name">
     <div class="name-cell">
       <div class="actions">
         <button class="action-btn" data-action="refresh-pipeline"  title="Refresh last run">↺</button>
         <button class="action-btn" data-action="fetch-history"    title="Fetch full history">⬇</button>
-        <button class="action-btn" data-action="rerun"            title="Re-run pipeline">▶</button>
+        <button class="action-btn" data-action="rerun"            title="${rerunTitle}">${rerunIcon}</button>
         <button class="action-btn ${!runId ? 'disabled' : ''}"   data-action="copy"    title="Copy Run ID">📋</button>
         <button class="action-btn" data-action="portal"           title="Open in Fabric portal">🔗</button>
         <button class="action-btn" data-action="history"          title="View full history">📊</button>
@@ -294,32 +310,33 @@ function handleRowClick(/** @type {MouseEvent} */ e) {
   if (!btn.dataset.action) return;
 
   const tr = /** @type {HTMLElement} */ (btn.closest('tr'));
-  const pid   = tr.dataset.pid   ?? '';
-  const wsid  = tr.dataset.wsid  ?? '';
-  const pname = tr.dataset.pname ?? '';
-  const wname = tr.dataset.wsname ?? '';
-  const runId = tr.dataset.runid ?? '';
+  const pid    = tr.dataset.pid   ?? '';
+  const wsid   = tr.dataset.wsid  ?? '';
+  const pname  = tr.dataset.pname ?? '';
+  const wname  = tr.dataset.wsname ?? '';
+  const runId  = tr.dataset.runid ?? '';
+  const itype  = /** @type {'pipeline'|'semanticModel'} */ (tr.dataset.itype ?? 'pipeline');
 
   switch (btn.dataset.action) {
     case 'star':
-      post({ type: 'toggleFavorite', pipelineId: pid, workspaceId: wsid });
+      post({ type: 'toggleFavorite', pipelineId: pid, workspaceId: wsid, itemType: itype });
       // Optimistic UI: toggle starred class immediately
       btn.classList.toggle('starred');
       btn.textContent = btn.classList.contains('starred') ? '★' : '☆';
       break;
 
     case 'refresh-pipeline':
-      post({ type: 'refreshPipeline', pipelineId: pid, workspaceId: wsid });
+      post({ type: 'refreshPipeline', pipelineId: pid, workspaceId: wsid, itemType: itype });
       showToast(`Refreshing "${pname}"…`, 'info');
       break;
 
     case 'fetch-history':
-      post({ type: 'fetchPipelineHistory', pipelineId: pid, workspaceId: wsid });
+      post({ type: 'fetchPipelineHistory', pipelineId: pid, workspaceId: wsid, itemType: itype });
       break;
 
     case 'rerun':
-      post({ type: 'rerunPipeline', pipelineId: pid, workspaceId: wsid });
-      showToast(`Triggering "${pname}"…`, 'info');
+      post({ type: 'rerunPipeline', pipelineId: pid, workspaceId: wsid, itemType: itype });
+      showToast(itype === 'semanticModel' ? `Triggering refresh for "${pname}"…` : `Triggering "${pname}"…`, 'info');
       break;
 
     case 'copy':
@@ -327,11 +344,11 @@ function handleRowClick(/** @type {MouseEvent} */ e) {
       break;
 
     case 'portal':
-      post({ type: 'openInFabric', pipelineId: pid, workspaceId: wsid, tenantId: state.currentTenantId });
+      post({ type: 'openInFabric', pipelineId: pid, workspaceId: wsid, tenantId: state.currentTenantId, itemType: itype });
       break;
 
     case 'history':
-      post({ type: 'viewHistory', pipelineId: pid, workspaceId: wsid, pipelineName: pname, workspaceName: wname });
+      post({ type: 'viewHistory', pipelineId: pid, workspaceId: wsid, pipelineName: pname, workspaceName: wname, itemType: itype });
       break;
   }
 }
@@ -487,6 +504,18 @@ dom.btnAddTenant.addEventListener('click', () => {
 
 $('btn-empty-add-tenant')?.addEventListener('click', () => {
   post({ type: 'addTenant' });
+});
+
+// ── Type filter buttons ───────────────────────────────────────────────────────
+document.querySelectorAll('.type-filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const itype = /** @type {HTMLElement} */ (btn).dataset.itype ?? 'all';
+    localFilter.itemType = itype;
+    // Single-select: update active state
+    document.querySelectorAll('.type-filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderTable();
+  });
 });
 
 // ── Toast ─────────────────────────────────────────────────────────────────────

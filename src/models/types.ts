@@ -1,5 +1,7 @@
 // ─── Domain models ───────────────────────────────────────────────────────────
 
+export type ItemType = 'pipeline' | 'semanticModel';
+
 export interface Tenant {
   id: string;       // same as tenantId, used as key
   name: string;     // user-defined display name
@@ -19,6 +21,7 @@ export interface Pipeline {
   workspaceId: string;
   workspaceName: string;
   tenantId: string;
+  itemType?: ItemType; // 'pipeline' (default) | 'semanticModel'
 }
 
 export type RunStatus = 'Succeeded' | 'Failed' | 'InProgress' | 'Cancelled' | 'Queued' | 'NotStarted';
@@ -62,6 +65,7 @@ export interface StoredRun {
   durationMs?: number;
   errorMessage?: string;
   createdAt?: string;
+  itemType?: string; // 'pipeline' (default) | 'semanticModel'
 }
 
 export interface Annotation {
@@ -79,6 +83,7 @@ export interface Favorite {
   pipelineId: string;
   alertEnabled: boolean;
   durationThresholdMs?: number;
+  itemType?: string; // 'pipeline' (default) | 'semanticModel'
 }
 
 // ─── Pattern detection ────────────────────────────────────────────────────────
@@ -125,16 +130,16 @@ export type WebviewToExtMsg =
   | { type: 'refresh' }
   | { type: 'selectTenant'; tenantId: string }
   | { type: 'selectWorkspace'; workspaceId: string }
-  | { type: 'toggleFavorite'; pipelineId: string; workspaceId: string }
+  | { type: 'toggleFavorite'; pipelineId: string; workspaceId: string; itemType?: ItemType }
   | { type: 'toggleWorkspaceFavorite'; workspaceId: string }
-  | { type: 'rerunPipeline'; pipelineId: string; workspaceId: string }
-  | { type: 'refreshPipeline'; pipelineId: string; workspaceId: string }
+  | { type: 'rerunPipeline'; pipelineId: string; workspaceId: string; itemType?: ItemType }
+  | { type: 'refreshPipeline'; pipelineId: string; workspaceId: string; itemType?: ItemType }
   | { type: 'copyRunId'; runId: string }
-  | { type: 'openInFabric'; pipelineId: string; workspaceId: string; tenantId: string }
-  | { type: 'viewHistory'; pipelineId: string; workspaceId: string; pipelineName: string; workspaceName: string }
+  | { type: 'openInFabric'; pipelineId: string; workspaceId: string; tenantId: string; itemType?: ItemType }
+  | { type: 'viewHistory'; pipelineId: string; workspaceId: string; pipelineName: string; workspaceName: string; itemType?: ItemType }
   | { type: 'addTenant' }
   | { type: 'exportHistory'; pipelineId: string }
-  | { type: 'fetchPipelineHistory'; pipelineId: string; workspaceId: string }
+  | { type: 'fetchPipelineHistory'; pipelineId: string; workspaceId: string; itemType?: ItemType }
   | { type: 'blacklistWorkspace'; workspaceId: string; workspaceName: string }
   | { type: 'setFavoritesOnly'; enabled: boolean };
 
