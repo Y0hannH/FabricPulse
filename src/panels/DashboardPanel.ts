@@ -247,10 +247,12 @@ export class DashboardPanel {
       this._postState();
 
       // ── Phase 2: fetch fresh runs for stale pipelines, in batches ─────────
-      const staleMeta = allMeta.filter(m => {
-        const lastFetched = this._runsFetchedAt.get(m.pipeline.id) ?? 0;
-        return (Date.now() - lastFetched) >= pollingMs;
-      });
+      const staleMeta = allMeta
+        .filter(m => {
+          const lastFetched = this._runsFetchedAt.get(m.pipeline.id) ?? 0;
+          return (Date.now() - lastFetched) >= pollingMs;
+        })
+        .sort((a, b) => (b.pipeline.isFavorite ? 1 : 0) - (a.pipeline.isFavorite ? 1 : 0));
 
       const useBatching = staleMeta.length > batchThreshold;
       const totalBatches = Math.ceil(staleMeta.length / batchSize);
