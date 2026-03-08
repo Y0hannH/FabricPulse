@@ -1,0 +1,446 @@
+// @ts-check
+/// <reference lib="dom" />
+'use strict';
+
+// ── VS Code API ───────────────────────────────────────────────────────────────
+// acquireVsCodeApi() can only be called once per webview lifetime
+const vscode = acquireVsCodeApi();
+
+// ── State ─────────────────────────────────────────────────────────────────────
+/** @type {import('../models/types').DashboardState} */
+let state = {
+  tenants: [],
+  currentTenantId: '',
+  workspaces: [],
+  pipelines: [],
+  selectedWorkspaceId: '',
+  lastRefreshed: '',
+  isLoading: false,
+};
+
+/** Local filter — round-tripped only for tenant/workspace changes that trigger an API call */
+const localFilter = { text: '', favoritesOnly: false };
+
+/** Sort state */
+const sort = { col: 'name', dir: 1 }; // dir: 1 = asc, -1 = desc
+
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.getElementById(id));
+
+const dom = {
+  tenantSelect:      /** @type {HTMLSelectElement} */ ($('tenant-select')),
+  wsPicker:          $('ws-picker'),
+  wsPickerToggle:    /** @type {HTMLButtonElement} */ ($('ws-picker-toggle')),
+  wsPickerLabel:     $('ws-picker-label'),
+  wsPickerDropdown:  $('ws-picker-dropdown'),
+  wsPickerSearch:    /** @type {HTMLInputElement}  */ ($('ws-picker-search')),
+  wsPickerList:      $('ws-picker-list'),
+  filterInput:       /** @type {HTMLInputElement}  */ ($('filter-input')),
+  clearFilter:       $('btn-clear-filter'),
+  favoritesOnly:     /** @type {HTMLInputElement}  */ ($('favorites-only')),
+  lastRefreshed:     $('last-refreshed'),
+  btnRefresh:        $('btn-refresh'),
+  btnAddTenant:      $('btn-add-tenant'),
+  loadingBar:        $('loading-bar'),
+  toast:             $('toast'),
+  emptyTenants:      $('empty-tenants'),
+  tableWrap:         $('table-wrap'),
+  tbody:             $('pipeline-tbody'),
+  noResults:         $('no-results'),
+};
+
+// ── Message bus ───────────────────────────────────────────────────────────────
+window.addEventListener('message', (/** @type {MessageEvent} */ ev) => {
+  const msg = ev.data;
+  switch (msg.type) {
+    case 'updateState':
+      state = msg.state;
+      render();
+      break;
+    case 'toast':
+      showToast(msg.message, msg.level ?? 'info');
+      break;
+  }
+});
+
+function post(/** @type {any} */ msg) {
+  vscode.postMessage(msg);
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function render() {
+  renderLoadingBar();
+  renderToolbar();
+  renderTable();
+  renderLastRefreshed();
+}
+
+function renderLoadingBar() {
+  dom.loadingBar.classList.toggle('hidden', !state.isLoading);
+}
+
+function renderLastRefreshed() {
+  if (state.lastRefreshed) {
+    dom.lastRefreshed.textContent = `Updated ${formatRelative(state.lastRefreshed)}`;
+  } else {
+    dom.lastRefreshed.textContent = '';
+  }
+}
+
+function renderToolbar() {
+  // Tenant select
+  const currentTenant = dom.tenantSelect.value;
+  dom.tenantSelect.innerHTML = '';
+  if (state.tenants.length === 0) {
+    dom.tenantSelect.innerHTML = '<option value="">— No tenants —</option>';
+  } else {
+    state.tenants.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = t.name;
+      opt.selected = t.id === state.currentTenantId;
+      dom.tenantSelect.appendChild(opt);
+    });
+  }
+
+  // Workspace slicer label
+  const selWs = state.workspaces.find(w => w.id === state.selectedWorkspaceId);
+  dom.wsPickerLabel.textContent = selWs ? selWs.displayName : 'All workspaces';
+
+  // Keep local filter controls in sync with first render
+  dom.filterInput.value = localFilter.text;
+  dom.favoritesOnly.checked = localFilter.favoritesOnly;
+  dom.clearFilter.style.display = localFilter.text ? 'block' : 'none';
+}
+
+// ── Filtering & sorting ───────────────────────────────────────────────────────
+function getVisible() {
+  let list = state.pipelines.slice();
+
+  if (state.selectedWorkspaceId) {
+    list = list.filter(p => p.workspaceId === state.selectedWorkspaceId);
+  }
+  if (localFilter.text) {
+    const needle = localFilter.text.toLowerCase();
+    list = list.filter(p =>
+      p.displayName.toLowerCase().includes(needle) ||
+      p.workspaceName.toLowerCase().includes(needle)
+    );
+  }
+  if (localFilter.favoritesOnly) {
+    list = list.filter(p => p.isFavorite);
+  }
+
+  list.sort((a, b) => {
+    let va = '', vb = '';
+    if (sort.col === 'name') { va = a.displayName; vb = b.displayName; }
+    if (sort.col === 'workspace') { va = a.workspaceName; vb = b.workspaceName; }
+    return va.localeCompare(vb) * sort.dir;
+  });
+
+  return list;
+}
+
+// ── Table rendering ───────────────────────────────────────────────────────────
+function renderTable() {
+  if (state.tenants.length === 0) {
+    dom.emptyTenants.classList.remove('hidden');
+    dom.tableWrap.classList.add('hidden');
+    return;
+  }
+  dom.emptyTenants.classList.add('hidden');
+  dom.tableWrap.classList.remove('hidden');
+
+  const visible = getVisible();
+
+  if (visible.length === 0) {
+    dom.tbody.innerHTML = '';
+    dom.noResults.classList.remove('hidden');
+    return;
+  }
+  dom.noResults.classList.add('hidden');
+
+  // Diff-based update: only re-render if data changed
+  const existingRows = /** @type {HTMLElement[]} */ ([...dom.tbody.querySelectorAll('tr')]);
+  const newHtml = visible.map(buildRowHtml).join('');
+
+  // Simple check: if innerHTML is unchanged don't re-set (avoids flickering)
+  if (dom.tbody.innerHTML !== newHtml) {
+    dom.tbody.innerHTML = newHtml;
+    attachRowListeners();
+  }
+}
+
+function buildRowHtml(/** @type {any} */ p) {
+  const run = p.lastRun;
+  const statusClass = statusCls(run?.status);
+  const statusLabel = run?.status ?? '';
+  const timeAgo = run?.startTime ? formatRelative(run.startTime) : '';
+  const duration = run?.durationMs != null ? formatDuration(run.durationMs) : '—';
+  const runId = run?.runId ?? '';
+
+  const rate = p.successRate7d;
+  const rateCls = rate == null ? '' : rate >= 90 ? 'rate-high' : rate >= 70 ? 'rate-mid' : 'rate-low';
+  const rateText = rate != null ? `${rate}%` : '—';
+
+  return `
+<tr data-pid="${esc(p.id)}" data-wsid="${esc(p.workspaceId)}"
+    data-pname="${esc(p.displayName)}" data-wsname="${esc(p.workspaceName)}"
+    data-runid="${esc(runId)}">
+  <td class="col-star">
+    <button class="star-btn ${p.isFavorite ? 'starred' : ''}"
+            data-action="star"
+            title="${p.isFavorite ? 'Remove from favorites' : 'Add to favorites'}">
+      ${p.isFavorite ? '★' : '☆'}
+    </button>
+  </td>
+  <td class="col-name" title="${esc(p.displayName)}">${esc(p.displayName)}</td>
+  <td class="col-workspace muted" title="${esc(p.workspaceName)}">${esc(p.workspaceName)}</td>
+  <td class="col-status">
+    ${run
+      ? `<span class="status-badge status-${statusClass}">${statusLabel}</span><span class="time-ago muted">${timeAgo}</span>`
+      : '<span class="muted">—</span>'}
+  </td>
+  <td class="col-duration" style="text-align:right">${duration}</td>
+  <td class="col-rate ${rateCls}" style="text-align:right">${rateText}</td>
+  <td class="col-actions">
+    <div class="actions">
+      <button class="action-btn" data-action="rerun"   title="Re-run pipeline">▶</button>
+      <button class="action-btn ${!runId ? 'disabled' : ''}" data-action="copy" title="Copy Run ID">📋</button>
+      <button class="action-btn" data-action="portal"  title="Open in Fabric portal">🔗</button>
+      <button class="action-btn" data-action="history" title="View run history">📊</button>
+    </div>
+  </td>
+</tr>`;
+}
+
+function attachRowListeners() {
+  dom.tbody.querySelectorAll('tr').forEach(row => {
+    row.addEventListener('click', handleRowClick);
+  });
+}
+
+function handleRowClick(/** @type {MouseEvent} */ e) {
+  const btn = /** @type {HTMLElement} */ (e.target);
+  if (!btn.dataset.action) return;
+
+  const tr = /** @type {HTMLElement} */ (btn.closest('tr'));
+  const pid   = tr.dataset.pid   ?? '';
+  const wsid  = tr.dataset.wsid  ?? '';
+  const pname = tr.dataset.pname ?? '';
+  const wname = tr.dataset.wsname ?? '';
+  const runId = tr.dataset.runid ?? '';
+
+  switch (btn.dataset.action) {
+    case 'star':
+      post({ type: 'toggleFavorite', pipelineId: pid, workspaceId: wsid });
+      // Optimistic UI: toggle starred class immediately
+      btn.classList.toggle('starred');
+      btn.textContent = btn.classList.contains('starred') ? '★' : '☆';
+      break;
+
+    case 'rerun':
+      post({ type: 'rerunPipeline', pipelineId: pid, workspaceId: wsid });
+      showToast(`Triggering "${pname}"…`, 'info');
+      break;
+
+    case 'copy':
+      if (runId) post({ type: 'copyRunId', runId });
+      break;
+
+    case 'portal':
+      post({ type: 'openInFabric', pipelineId: pid, workspaceId: wsid, tenantId: state.currentTenantId });
+      break;
+
+    case 'history':
+      post({ type: 'viewHistory', pipelineId: pid, workspaceId: wsid, pipelineName: pname, workspaceName: wname });
+      break;
+  }
+}
+
+// ── Sort column headers ───────────────────────────────────────────────────────
+document.querySelectorAll('.sortable').forEach(th => {
+  th.addEventListener('click', () => {
+    const col = /** @type {HTMLElement} */ (th).dataset.col ?? '';
+    if (sort.col === col) {
+      sort.dir *= -1;
+    } else {
+      sort.col = col;
+      sort.dir = 1;
+    }
+    renderTable();
+  });
+});
+
+// ── Toolbar event listeners ───────────────────────────────────────────────────
+dom.tenantSelect.addEventListener('change', () => {
+  post({ type: 'selectTenant', tenantId: dom.tenantSelect.value });
+});
+
+// ── Workspace slicer ──────────────────────────────────────────────────────────
+let wsPickerOpen = false;
+
+function openWsPicker() {
+  wsPickerOpen = true;
+  dom.wsPickerDropdown.classList.remove('hidden');
+  dom.wsPickerSearch.value = '';
+  dom.wsPickerSearch.focus();
+  renderWsPickerList('');
+}
+
+function closeWsPicker() {
+  wsPickerOpen = false;
+  dom.wsPickerDropdown.classList.add('hidden');
+}
+
+function renderWsPickerList(/** @type {string} */ filter) {
+  const lc = filter.toLowerCase();
+
+  // Sort: favorites first, then alphabetical
+  const sorted = state.workspaces.slice().sort((a, b) => {
+    if (a.isFavorite && !b.isFavorite) return -1;
+    if (!a.isFavorite && b.isFavorite) return 1;
+    return a.displayName.localeCompare(b.displayName);
+  });
+
+  const filtered = lc
+    ? sorted.filter(ws => ws.displayName.toLowerCase().includes(lc))
+    : sorted;
+
+  dom.wsPickerList.innerHTML = '';
+
+  // "All workspaces" row
+  const allLi = document.createElement('li');
+  const allActive = !state.selectedWorkspaceId;
+  allLi.className = 'ws-picker-item' + (allActive ? ' active' : '');
+  allLi.innerHTML = `<span class="ws-picker-dot">${allActive ? '●' : ''}</span><span class="ws-picker-name">All workspaces</span>`;
+  allLi.addEventListener('click', () => { closeWsPicker(); post({ type: 'selectWorkspace', workspaceId: '' }); });
+  dom.wsPickerList.appendChild(allLi);
+
+  filtered.forEach(ws => {
+    const li = document.createElement('li');
+    const active = ws.id === state.selectedWorkspaceId;
+    li.className = 'ws-picker-item' + (active ? ' active' : '');
+    li.innerHTML = `
+      <span class="ws-picker-dot">${active ? '●' : ''}</span>
+      <span class="ws-picker-name">${esc(ws.displayName)}</span>
+      <button class="ws-star-btn ${ws.isFavorite ? 'starred' : ''}"
+              data-wsid="${esc(ws.id)}"
+              title="${ws.isFavorite ? 'Remove from favorites' : 'Pin workspace'}">${ws.isFavorite ? '★' : '☆'}</button>`;
+
+    li.querySelector('.ws-star-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const btn = /** @type {HTMLElement} */ (e.currentTarget);
+      const wsId = btn.dataset.wsid ?? '';
+      // Optimistic update
+      const wsObj = state.workspaces.find(w => w.id === wsId);
+      if (wsObj) wsObj.isFavorite = !wsObj.isFavorite;
+      post({ type: 'toggleWorkspaceFavorite', workspaceId: wsId });
+      renderWsPickerList(dom.wsPickerSearch.value.trim());
+    });
+
+    li.addEventListener('click', () => { closeWsPicker(); post({ type: 'selectWorkspace', workspaceId: ws.id }); });
+    dom.wsPickerList.appendChild(li);
+  });
+}
+
+dom.wsPickerToggle.addEventListener('click', (e) => {
+  e.stopPropagation();
+  wsPickerOpen ? closeWsPicker() : openWsPicker();
+});
+
+dom.wsPickerSearch.addEventListener('input', () => {
+  renderWsPickerList(dom.wsPickerSearch.value.trim());
+});
+
+// Close when clicking outside
+document.addEventListener('click', (e) => {
+  if (wsPickerOpen && !dom.wsPicker.contains(/** @type {Node} */ (e.target))) {
+    closeWsPicker();
+  }
+});
+
+let filterDebounce = 0;
+dom.filterInput.addEventListener('input', () => {
+  localFilter.text = dom.filterInput.value;
+  dom.clearFilter.style.display = localFilter.text ? 'block' : 'none';
+  clearTimeout(filterDebounce);
+  filterDebounce = setTimeout(renderTable, 120);
+});
+
+dom.clearFilter.addEventListener('click', () => {
+  localFilter.text = '';
+  dom.filterInput.value = '';
+  dom.clearFilter.style.display = 'none';
+  renderTable();
+});
+
+dom.favoritesOnly.addEventListener('change', () => {
+  localFilter.favoritesOnly = dom.favoritesOnly.checked;
+  renderTable();
+});
+
+dom.btnRefresh.addEventListener('click', () => {
+  post({ type: 'refresh' });
+});
+
+dom.btnAddTenant.addEventListener('click', () => {
+  post({ type: 'addTenant' });
+});
+
+$('btn-empty-add-tenant')?.addEventListener('click', () => {
+  post({ type: 'addTenant' });
+});
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+let toastTimer = 0;
+function showToast(/** @type {string} */ msg, /** @type {string} */ level = 'info') {
+  dom.toast.textContent = msg;
+  dom.toast.className = `toast toast-${level}`;
+  dom.toast.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => dom.toast.classList.add('hidden'), 4000);
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function statusCls(/** @type {string|undefined} */ status) {
+  switch (status) {
+    case 'Succeeded':  return 'succeeded';
+    case 'Failed':     return 'failed';
+    case 'InProgress': return 'inprogress';
+    case 'Cancelled':  return 'cancelled';
+    case 'Queued':     return 'queued';
+    default:           return 'unknown';
+  }
+}
+
+function formatRelative(/** @type {string} */ iso) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1)  return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const h = Math.floor(mins / 60);
+  if (h < 24)    return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+function formatDuration(/** @type {number} */ ms) {
+  const s = Math.round(ms / 1000);
+  if (s < 60)    return `${s}s`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  if (m < 60)    return `${m}m ${r}s`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+function esc(/** @type {string} */ s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;'); // prevent single-quote breakout in HTML attributes
+}
+
+// ── Bootstrap ─────────────────────────────────────────────────────────────────
+post({ type: 'ready' });

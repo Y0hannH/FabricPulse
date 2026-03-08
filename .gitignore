@@ -1,1 +1,5 @@
-# node_modules, out/, *.vsix
+node_modules/
+out/
+*.vsix
+*.js.map
+.vscode-test/

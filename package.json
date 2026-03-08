@@ -1,0 +1,115 @@
+{
+  "name": "fabricpulse",
+  "displayName": "FabricPulse",
+  "description": "Real-time Microsoft Fabric pipeline monitor for VS Code",
+  "version": "0.1.0",
+  "publisher": "evolve",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/evolve/fabricpulse"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "keywords": ["fabric", "microsoft", "pipeline", "monitor", "azure"],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "fabricpulse-sidebar",
+          "title": "FabricPulse",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "fabricpulse-sidebar": [
+        {
+          "id": "fabricpulse.launchView",
+          "name": "FabricPulse",
+          "type": "tree"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "fabricpulse.launchView",
+        "contents": "⚡ Monitor your Microsoft Fabric data pipelines in real time.\n\n[$(pulse) Open Dashboard](command:fabricPulse.openDashboard)\n\n[$(add) Add Tenant](command:fabricPulse.addTenant)\n\n[$(trash) Clear History](command:fabricPulse.clearHistory)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "fabricPulse.openDashboard",
+        "title": "FabricPulse: Open Dashboard",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "fabricPulse.addTenant",
+        "title": "FabricPulse: Add Tenant"
+      },
+      {
+        "command": "fabricPulse.exportHistory",
+        "title": "FabricPulse: Export History (CSV)"
+      },
+      {
+        "command": "fabricPulse.clearHistory",
+        "title": "FabricPulse: Clear Local History"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        { "command": "fabricPulse.openDashboard" },
+        { "command": "fabricPulse.addTenant" },
+        { "command": "fabricPulse.exportHistory" },
+        { "command": "fabricPulse.clearHistory" }
+      ]
+    },
+    "configuration": {
+      "title": "FabricPulse",
+      "properties": {
+        "fabricPulse.pollingInterval": {
+          "type": "number",
+          "default": 60,
+          "minimum": 10,
+          "maximum": 3600,
+          "description": "Auto-refresh interval in seconds (default: 60)"
+        },
+        "fabricPulse.retentionDays": {
+          "type": "number",
+          "default": 90,
+          "minimum": 7,
+          "maximum": 365,
+          "description": "Days to retain pipeline run history (default: 90)"
+        },
+        "fabricPulse.dailyReportTime": {
+          "type": "string",
+          "default": "18:00",
+          "pattern": "^([01]?[0-9]|2[0-3]):[0-5][0-9]$",
+          "description": "Time to show daily summary notification (HH:MM, default: 18:00)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "dependencies": {
+    "@azure/identity": "^4.5.0",
+    "node-fetch": "^2.7.0",
+    "sql.js": "^1.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/node-fetch": "^2.6.11",
+    "@types/sql.js": "^1.4.9",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.3"
+  }
+}

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none';
+                 style-src {{WEBVIEW_CSP_SOURCE}} 'unsafe-inline';
+                 script-src {{WEBVIEW_CSP_SOURCE}} 'nonce-{{NONCE}}';
+                 img-src data:;" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="{{CSS_URI}}" />
+  <title>Pipeline History</title>
+</head>
+<body>
+
+<div id="history-app">
+
+  <!-- ── Header ── -->
+  <header class="history-header">
+    <div class="history-title" id="pipeline-title">Loading…</div>
+    <div class="history-meta">
+      <div class="stat-pill">
+        <strong id="stat-rate">—</strong> success rate
+      </div>
+      <div class="stat-pill">
+        <strong id="stat-total">—</strong> runs
+      </div>
+      <div class="stat-pill muted" id="stat-period"></div>
+      <div class="period-bar">
+        <button class="period-btn" data-period="7d">7d</button>
+        <button class="period-btn active" data-period="30d">30d</button>
+        <button class="period-btn" data-period="90d">90d</button>
+        <button class="period-btn" data-period="all">All</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Toast ── -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- ── Duration chart ── -->
+  <section class="chart-section">
+    <div class="chart-title">Run duration over time</div>
+    <canvas id="duration-chart"></canvas>
+  </section>
+
+  <!-- ── Pattern warnings ── -->
+  <section class="patterns-section" id="patterns-section" style="display:none"></section>
+
+  <!-- ── Scrollable body: runs table + annotations ── -->
+  <div class="history-body">
+
+    <!-- Runs table -->
+    <div class="history-table-wrap">
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th class="h-col-date">Start time</th>
+            <th class="h-col-status">Status</th>
+            <th class="h-col-dur">Duration</th>
+            <th class="h-col-err">Error / Info</th>
+            <th class="h-col-note" title="Annotations">✏</th>
+          </tr>
+        </thead>
+        <tbody id="runs-tbody"></tbody>
+      </table>
+      <div id="no-runs" class="no-results hidden">No runs in the selected period.</div>
+    </div>
+
+    <!-- Annotations list -->
+    <div id="annotations-section" class="history-table-wrap" style="display:none">
+      <div style="font-size:11px;color:var(--vscode-descriptionForeground);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Notes</div>
+      <div id="annotations-list"></div>
+    </div>
+
+  </div>
+
+  <!-- ── Footer / export bar ── -->
+  <footer class="export-bar">
+    <span class="muted text-xs" id="export-label">Export current period:</span>
+    <button class="btn btn-secondary btn-sm" id="btn-export-csv">CSV</button>
+    <button class="btn btn-secondary btn-sm" id="btn-export-json">JSON</button>
+    <button class="btn btn-secondary btn-sm" id="btn-add-note" style="margin-left:auto">✏ Add Note</button>
+  </footer>
+
+</div>
+
+<!-- ── Annotation modal (hidden by default) ── -->
+<div id="modal-overlay" class="modal-overlay hidden">
+  <div class="modal">
+    <h3>Add Annotation</h3>
+    <label for="modal-date">Date</label>
+    <input type="date" id="modal-date" />
+    <label for="modal-note">Note</label>
+    <textarea id="modal-note" placeholder="e.g. Deployed v2.1 — investigating slow run…"></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+      <button class="btn btn-primary"   id="modal-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<script nonce="{{NONCE}}" src="{{JS_URI}}"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install)",
+      "Bash(cmd.exe /c \"where node 2>&1 && node --version 2>&1 && npm --version 2>&1\")",
+      "Bash(cmd.exe /c \"where node\")",
+      "Bash(cmd.exe /c \"node -v\")",
+      "Bash(cmd.exe /c \"npm -v\")",
+      "Bash(powershell.exe -NoProfile -Command \"Get-Command node -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source; \\(node --version 2>&1\\); \\(npm --version 2>&1\\)\")",
+      "Bash(powershell.exe -NoProfile -Command \"Get-ChildItem ''C:\\\\Program Files\\\\'' | Where-Object { $_Name -like ''*node*'' -or $_Name -like ''*nvm*'' }; Get-ChildItem ''C:\\\\Users\\\\Yohann\\\\AppData\\\\Roaming\\\\'' | Where-Object { $_Name -like ''*nvm*'' -or $_Name -like ''*npm*'' }\")",
+      "Bash(powershell.exe -NoProfile -Command \"Get-Item ''C:\\\\Program Files\\\\nodejs\\\\node.exe'' -ErrorAction SilentlyContinue; Get-Item ''C:\\\\Users\\\\Yohann\\\\AppData\\\\Roaming\\\\nvm\\\\nvm.exe'' -ErrorAction SilentlyContinue; Get-Item ''C:\\\\nvm\\\\nvm.exe'' -ErrorAction SilentlyContinue\")",
+      "Bash(node --version)",
+      "Bash(npm --version)",
+      "Bash(powershell.exe -NoProfile -Command \"node --version; npm --version\")",
+      "Bash(powershell.exe -NoProfile -Command \"& ''C:\\\\Program Files\\\\nodejs\\\\npm.cmd'' --version\")",
+      "Bash(powershell.exe -NoProfile -Command \"Set-Location ''C:\\\\Codes\\\\Evolve\\\\FabricPulse\\\\FabricPulse''; & ''C:\\\\Program Files\\\\nodejs\\\\npm.cmd'' install 2>&1\")",
+      "Bash(powershell.exe -NoProfile -Command \"Set-Location ''C:\\\\Codes\\\\Evolve\\\\FabricPulse\\\\FabricPulse''; & ''C:\\\\Program Files\\\\nodejs\\\\npm.cmd'' run compile 2>&1\")"
+    ]
+  }
+}

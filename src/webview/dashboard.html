@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none';
+                 style-src {{WEBVIEW_CSP_SOURCE}} 'unsafe-inline';
+                 script-src {{WEBVIEW_CSP_SOURCE}} 'nonce-{{NONCE}}';
+                 img-src data:;" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="{{CSS_URI}}" />
+  <title>FabricPulse</title>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ── Toolbar ── -->
+  <header class="toolbar">
+    <div class="toolbar-left">
+      <span class="brand">⚡ FabricPulse</span>
+
+      <select id="tenant-select" class="select" title="Active tenant">
+        <option value="">— No tenant —</option>
+      </select>
+
+      <div class="ws-picker" id="ws-picker">
+        <button class="ws-picker-toggle" id="ws-picker-toggle" title="Filter by workspace">
+          <span id="ws-picker-label">All workspaces</span>
+          <span class="ws-picker-arrow">▾</span>
+        </button>
+        <div class="ws-picker-dropdown hidden" id="ws-picker-dropdown">
+          <input type="text" class="ws-picker-search" id="ws-picker-search"
+                 placeholder="Search…" autocomplete="off" />
+          <ul class="ws-picker-list" id="ws-picker-list"></ul>
+        </div>
+      </div>
+
+      <div class="search-wrap">
+        <input type="text" id="filter-input" class="input" placeholder="Filter pipelines…" autocomplete="off" />
+        <button id="btn-clear-filter" class="btn-icon" title="Clear filter" style="display:none">✕</button>
+      </div>
+
+      <label class="toggle-label" title="Show only starred pipelines">
+        <input type="checkbox" id="favorites-only" />
+        <span>★ Favorites</span>
+      </label>
+    </div>
+
+    <div class="toolbar-right">
+      <span id="last-refreshed" class="muted text-xs"></span>
+      <button id="btn-refresh" class="btn btn-secondary" title="Refresh now">↺ Refresh</button>
+      <button id="btn-add-tenant" class="btn btn-primary">+ Add Tenant</button>
+    </div>
+  </header>
+
+  <!-- ── Loading bar ── -->
+  <div id="loading-bar" class="loading-bar hidden">
+    <div class="loading-bar-fill"></div>
+  </div>
+
+  <!-- ── Toast notification ── -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- ── Main content ── -->
+  <main id="main">
+
+    <!-- Empty state: no tenants -->
+    <div id="empty-tenants" class="empty-state hidden">
+      <p class="empty-icon">⚡</p>
+      <p class="empty-title">No tenants configured</p>
+      <p class="empty-sub">Add your first Azure tenant to start monitoring Fabric pipelines.</p>
+      <button class="btn btn-primary" id="btn-empty-add-tenant">+ Add Tenant</button>
+    </div>
+
+    <!-- Pipeline table -->
+    <div id="table-wrap" class="table-wrap hidden">
+      <table class="pipeline-table" id="pipeline-table">
+        <thead>
+          <tr>
+            <th class="col-star" title="Favorite"></th>
+            <th class="col-name sortable" data-col="name">Pipeline ▾</th>
+            <th class="col-workspace sortable" data-col="workspace">Workspace</th>
+            <th class="col-status">Last Run</th>
+            <th class="col-duration">Duration</th>
+            <th class="col-rate">7d Rate</th>
+            <th class="col-actions"></th>
+          </tr>
+        </thead>
+        <tbody id="pipeline-tbody"></tbody>
+      </table>
+
+      <div id="no-results" class="no-results hidden">No pipelines match the current filters.</div>
+    </div>
+
+  </main>
+
+</div>
+
+<script nonce="{{NONCE}}" src="{{JS_URI}}"></script>
+</body>
+</html>
