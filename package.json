@@ -2,7 +2,7 @@
   "name": "fabricpulse",
   "displayName": "FabricPulse",
   "description": "Real-time Microsoft Fabric pipeline monitor for VS Code",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "publisher": "evolve",
   "license": "MIT",
   "repository": {
