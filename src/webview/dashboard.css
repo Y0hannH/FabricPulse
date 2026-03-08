@@ -199,6 +199,20 @@ button { cursor: pointer; font-family: inherit; font-size: inherit; }
 }
 .ws-star-btn:hover { opacity: 1 !important; color: var(--fp-star); }
 
+.ws-blacklist-btn {
+  flex-shrink: 0;
+  background:  none;
+  border:      none;
+  padding:     0 2px;
+  cursor:      pointer;
+  font-size:   13px;
+  color:       var(--fp-grey);
+  opacity:     0;
+  transition:  opacity 0.1s, color 0.1s;
+}
+.ws-picker-item:hover .ws-blacklist-btn { opacity: 0.5; }
+.ws-blacklist-btn:hover { opacity: 1 !important; color: var(--fp-red, #e05555); }
+
 .search-wrap {
   position: relative;
   display: flex;

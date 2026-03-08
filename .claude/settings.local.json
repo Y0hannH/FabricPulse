@@ -16,7 +16,8 @@
       "Bash(powershell.exe -NoProfile -Command \"Set-Location ''C:\\\\Codes\\\\Evolve\\\\FabricPulse\\\\FabricPulse''; & ''C:\\\\Program Files\\\\nodejs\\\\npm.cmd'' install 2>&1\")",
       "Bash(powershell.exe -NoProfile -Command \"Set-Location ''C:\\\\Codes\\\\Evolve\\\\FabricPulse\\\\FabricPulse''; & ''C:\\\\Program Files\\\\nodejs\\\\npm.cmd'' run compile 2>&1\")",
       "Bash(del \"C:\\\\Codes\\\\Evolve\\\\FabricPulse\\\\FabricPulse\\\\nul\")",
-      "Bash(npm run compile)"
+      "Bash(npm run compile)",
+      "Bash(npx tsc --noEmit)"
     ]
   }
 }

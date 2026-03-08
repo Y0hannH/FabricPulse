@@ -111,6 +111,12 @@
           "minimum": 1,
           "maximum": 200,
           "description": "Minimum number of stale pipelines required to trigger batched loading (default: 10)"
+        },
+        "fabricPulse.blacklistedWorkspaces": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Workspaces to exclude from pipeline refresh. Accepts workspace IDs (GUIDs) or display names (case-insensitive)."
         }
       }
     }

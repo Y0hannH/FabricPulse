@@ -127,6 +127,12 @@ export class DashboardPanel {
     this._isLoading = true;
     this._postState();
 
+    const cfg = vscode.workspace.getConfiguration('fabricPulse');
+    const blacklist = (cfg.get<string[]>('blacklistedWorkspaces', [])).map(s => s.toLowerCase());
+    const isBlacklisted = (ws: { id: string; displayName: string }) =>
+      blacklist.includes(ws.id.toLowerCase()) ||
+      blacklist.includes(ws.displayName.toLowerCase());
+
     try {
       // ── No workspace selected: serve from SQLite cache when possible ──────
       if (!this._selectedWorkspaceId && !force) {
@@ -134,7 +140,7 @@ export class DashboardPanel {
 
         if (cachedWorkspaces.length > 0) {
           // Cache is populated — rebuild the view entirely from SQLite, zero API calls
-          this._workspaces = cachedWorkspaces.map(ws => ({
+          this._workspaces = cachedWorkspaces.filter(ws => !isBlacklisted(ws)).map(ws => ({
             ...ws,
             isFavorite: this._storage.isWorkspaceFavorite(ws.id),
           }));
@@ -171,28 +177,34 @@ export class DashboardPanel {
 
       // ── Workspace selected (or cache empty on first launch) ───────────────
       const rawWorkspaces = await this._fabricApi.getWorkspaces(this._currentTenantId);
-      this._workspaces = rawWorkspaces.map(ws => ({
+      const allWorkspaces = rawWorkspaces.filter(ws => !isBlacklisted(ws));
+      if (allWorkspaces.length < rawWorkspaces.length) {
+        console.log(`[FabricPulse] Skipping ${rawWorkspaces.length - allWorkspaces.length} blacklisted workspace(s).`);
+      }
+      this._workspaces = allWorkspaces.map(ws => ({
         ...ws,
         isFavorite: this._storage.isWorkspaceFavorite(ws.id),
       }));
       // Post workspaces immediately so the picker populates before pipelines load
       this._postState();
 
-      const targetWorkspaces = this._selectedWorkspaceId
-        ? this._workspaces.filter(w => w.id === this._selectedWorkspaceId)
-        : this._workspaces;
-
-      const cfg = vscode.workspace.getConfiguration('fabricPulse');
       const pollingMs    = cfg.get<number>('pollingInterval', 60) * 1000;
       const batchSize    = cfg.get<number>('batchSize', 5);
       const batchDelayMs = cfg.get<number>('batchDelayMs', 2500);
       const batchThreshold = cfg.get<number>('batchThreshold', 10);
 
+      const filteredWorkspaces = (this._selectedWorkspaceId
+        ? this._workspaces.filter(w => w.id === this._selectedWorkspaceId)
+        : this._workspaces
+      ).sort((a, b) => (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0));
+
       // ── Phase 1: collect all pipelines with cached run data (no API calls for runs) ──
       type PipelineMeta = { pipeline: PipelineWithStatus; ws: Workspace };
       const allMeta: PipelineMeta[] = [];
 
-      for (const ws of targetWorkspaces) {
+      for (let wsIdx = 0; wsIdx < filteredWorkspaces.length; wsIdx++) {
+        if (wsIdx > 0) await new Promise(r => setTimeout(r, 500));
+        const ws = filteredWorkspaces[wsIdx];
         let pipelines;
         try {
           pipelines = await this._fabricApi.getPipelines(this._currentTenantId, ws.id);
@@ -349,6 +361,22 @@ export class DashboardPanel {
         const ws = this._workspaces.find(w => w.id === msg.workspaceId);
         if (ws) ws.isFavorite = !isFavWs;
         this._postState();
+        break;
+      }
+
+      case 'blacklistWorkspace': {
+        const cfg2 = vscode.workspace.getConfiguration('fabricPulse');
+        const current = cfg2.get<string[]>('blacklistedWorkspaces', []);
+        if (!current.includes(msg.workspaceId)) {
+          await cfg2.update('blacklistedWorkspaces', [...current, msg.workspaceId], vscode.ConfigurationTarget.Global);
+        }
+        this._workspaces = this._workspaces.filter(w => w.id !== msg.workspaceId);
+        if (this._selectedWorkspaceId === msg.workspaceId) {
+          this._selectedWorkspaceId = '';
+        }
+        this._pipelines = this._pipelines.filter(p => p.workspaceId !== msg.workspaceId);
+        this._postState();
+        this._post({ type: 'toast', message: `"${msg.workspaceName}" ajouté à la blacklist`, level: 'info' });
         break;
       }
 

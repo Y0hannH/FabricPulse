@@ -397,7 +397,10 @@ function renderWsPickerList(/** @type {string} */ filter) {
       <span class="ws-picker-name">${esc(ws.displayName)}</span>
       <button class="ws-star-btn ${ws.isFavorite ? 'starred' : ''}"
               data-wsid="${esc(ws.id)}"
-              title="${ws.isFavorite ? 'Remove from favorites' : 'Pin workspace'}">${ws.isFavorite ? '★' : '☆'}</button>`;
+              title="${ws.isFavorite ? 'Remove from favorites' : 'Pin workspace'}">${ws.isFavorite ? '★' : '☆'}</button>
+      <button class="ws-blacklist-btn"
+              data-wsid="${esc(ws.id)}" data-wsname="${esc(ws.displayName)}"
+              title="Blacklist this workspace">⊘</button>`;
 
     li.querySelector('.ws-star-btn').addEventListener('click', (e) => {
       e.stopPropagation();
@@ -408,6 +411,12 @@ function renderWsPickerList(/** @type {string} */ filter) {
       if (wsObj) wsObj.isFavorite = !wsObj.isFavorite;
       post({ type: 'toggleWorkspaceFavorite', workspaceId: wsId });
       renderWsPickerList(dom.wsPickerSearch.value.trim());
+    });
+
+    li.querySelector('.ws-blacklist-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const btn = /** @type {HTMLElement} */ (e.currentTarget);
+      post({ type: 'blacklistWorkspace', workspaceId: btn.dataset.wsid ?? '', workspaceName: btn.dataset.wsname ?? '' });
     });
 
     li.addEventListener('click', () => { closeWsPicker(); post({ type: 'selectWorkspace', workspaceId: ws.id }); });
