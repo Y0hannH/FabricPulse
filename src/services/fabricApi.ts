@@ -5,6 +5,13 @@ import { Workspace, Pipeline, PipelineRun, RunStatus } from '../models/types';
 const BASE_URL = 'https://api.fabric.microsoft.com/v1';
 const MAX_RETRIES = 3;
 
+/** Ensure a UTC datetime string from the Fabric API has a trailing 'Z'.
+ *  The API returns fields named *Utc but omits the timezone designator,
+ *  causing JavaScript to parse them as local time instead of UTC. */
+function asUtcIso(s: string): string {
+  return s.endsWith('Z') ? s : s + 'Z';
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -184,8 +191,10 @@ export class FabricApiService {
     const items = await this.listAll<FabricRun>(tenantId, path);
 
     const runs = items.map(r => {
-      const start = r.startTimeUtc ? new Date(r.startTimeUtc).getTime() : undefined;
-      const end = r.endTimeUtc ? new Date(r.endTimeUtc).getTime() : undefined;
+      const startIso = r.startTimeUtc ? asUtcIso(r.startTimeUtc) : undefined;
+      const endIso   = r.endTimeUtc   ? asUtcIso(r.endTimeUtc)   : undefined;
+      const start = startIso ? new Date(startIso).getTime() : undefined;
+      const end   = endIso   ? new Date(endIso).getTime()   : undefined;
       const durationMs = start !== undefined && end !== undefined ? end - start : undefined;
 
       return {
@@ -193,8 +202,8 @@ export class FabricApiService {
         pipelineId,
         runId: r.id,
         status: this.normalizeStatus(r.status),
-        startTime: r.startTimeUtc ?? new Date().toISOString(),
-        endTime: r.endTimeUtc,
+        startTime: startIso ?? new Date().toISOString(),
+        endTime: endIso,
         durationMs,
         errorMessage: r.failureReason?.message,
       };
@@ -219,15 +228,17 @@ export class FabricApiService {
     if (items.length === 0) return undefined;
 
     const runs = items.map(r => {
-      const start = r.startTimeUtc ? new Date(r.startTimeUtc).getTime() : undefined;
-      const end   = r.endTimeUtc   ? new Date(r.endTimeUtc).getTime()   : undefined;
+      const startIso = r.startTimeUtc ? asUtcIso(r.startTimeUtc) : undefined;
+      const endIso   = r.endTimeUtc   ? asUtcIso(r.endTimeUtc)   : undefined;
+      const start = startIso ? new Date(startIso).getTime() : undefined;
+      const end   = endIso   ? new Date(endIso).getTime()   : undefined;
       return {
         id: r.id,
         pipelineId,
         runId: r.id,
         status: this.normalizeStatus(r.status),
-        startTime: r.startTimeUtc ?? new Date().toISOString(),
-        endTime: r.endTimeUtc,
+        startTime: startIso ?? new Date().toISOString(),
+        endTime: endIso,
         durationMs: start !== undefined && end !== undefined ? end - start : undefined,
         errorMessage: r.failureReason?.message,
       };
