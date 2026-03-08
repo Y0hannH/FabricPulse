@@ -43,6 +43,7 @@ export interface PipelineWithStatus extends Pipeline {
   isFavorite: boolean;
   alertEnabled: boolean;
   durationThresholdMs?: number;
+  cachedRunCount?: number;
 }
 
 // ─── Storage models ───────────────────────────────────────────────────────────

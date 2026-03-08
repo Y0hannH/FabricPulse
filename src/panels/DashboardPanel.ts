@@ -172,6 +172,7 @@ export class DashboardPanel {
               isFavorite: !!fav,
               alertEnabled: fav?.alertEnabled ?? false,
               durationThresholdMs: fav?.durationThresholdMs,
+              cachedRunCount: this._storage.getRunCount(p.id),
             };
           });
 
@@ -242,6 +243,7 @@ export class DashboardPanel {
               isFavorite: !!fav,
               alertEnabled: fav?.alertEnabled ?? false,
               durationThresholdMs: fav?.durationThresholdMs,
+              cachedRunCount: this._storage.getRunCount(p.id),
             },
           });
         }

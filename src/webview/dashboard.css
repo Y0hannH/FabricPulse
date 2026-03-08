@@ -429,6 +429,7 @@ button { cursor: pointer; font-family: inherit; font-size: inherit; }
 .col-dur-min   { width: 62px;  text-align: right; color: var(--vscode-descriptionForeground); }
 .col-dur-max   { width: 62px;  text-align: right; color: var(--vscode-descriptionForeground); }
 .col-rate      { width: 68px;  text-align: right; }
+.col-runs      { width: 56px;  text-align: right; color: var(--vscode-descriptionForeground); }
 
 /* ── Star button ─────────────────────────────────────────────────────────────── */
 .star-btn {

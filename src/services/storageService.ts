@@ -202,6 +202,14 @@ export class StorageService {
     };
   }
 
+  getRunCount(pipelineId: string): number {
+    const result = this.db.exec(
+      'SELECT COUNT(*) FROM pipeline_runs WHERE pipeline_id = ?',
+      [pipelineId],
+    );
+    return (result[0]?.values[0]?.[0] as number) ?? 0;
+  }
+
   getSuccessRate(pipelineId: string, days: number): { rate: number; total: number } {
     const since = new Date(Date.now() - days * 86_400_000).toISOString();
     const result = this.db.exec(
