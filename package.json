@@ -7,7 +7,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/evolve/fabricpulse"
+    "url": "https://github.com/Y0hannH/FabricPulse"
   },
   "engines": {
     "vscode": "^1.85.0"
