@@ -10,6 +10,17 @@ export class StorageService {
   private db!: SqlDatabase;
   private dbPath = '';
 
+  /** Factory cached so we can reopen the DB without re-initializing WASM. */
+  private _SQL!: { Database: new (data?: ArrayLike<number> | Buffer | null) => SqlDatabase };
+
+  /** Debounced flush: coalesces rapid writes into a single disk write. */
+  private _flushTimer: ReturnType<typeof setTimeout> | undefined;
+  private _dirty = false;
+
+  /** Counts DB operations since last reopen. Used to trigger periodic WASM heap reset. */
+  private _opsSinceReopen = 0;
+  private static readonly REOPEN_THRESHOLD = 5_000;
+
   constructor(private readonly context: vscode.ExtensionContext) {}
 
   // ─── Init ─────────────────────────────────────────────────────────────────
@@ -25,11 +36,10 @@ export class StorageService {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const initSqlJs = require('sql.js') as (cfg?: { locateFile(f: string): string }) => Promise<{ Database: new (data?: ArrayLike<number> | Buffer | null) => SqlDatabase }>;
 
-    let SQL: Awaited<ReturnType<typeof initSqlJs>>;
     try {
       // The WASM binary is copied to the same directory as the bundled extension
       // by the esbuild build script. __dirname points to out/ at runtime.
-      SQL = await initSqlJs({
+      this._SQL = await initSqlJs({
         locateFile: (file: string) => path.join(__dirname, file),
       });
     } catch (err: unknown) {
@@ -37,22 +47,7 @@ export class StorageService {
       throw new Error(`FabricPulse: Failed to initialize SQL.js.\n${msg}`);
     }
 
-    if (fs.existsSync(this.dbPath)) {
-      try {
-        const buf = fs.readFileSync(this.dbPath);
-        this.db = new SQL.Database(buf);
-      } catch {
-        // Database file is corrupted — back it up and start fresh.
-        const backupPath = this.dbPath + '.corrupted';
-        try { fs.renameSync(this.dbPath, backupPath); } catch { /* best-effort */ }
-        this.db = new SQL.Database();
-        vscode.window.showWarningMessage(
-          'FabricPulse: Local database was corrupted and has been reset. History data was lost.',
-        );
-      }
-    } else {
-      this.db = new SQL.Database();
-    }
+    this._openDb();
 
     this.createSchema();
     this.runMigrations();
@@ -60,14 +55,72 @@ export class StorageService {
     this._flush();
   }
 
-  /** Write the in-memory DB to disk. Called after every mutating operation. */
-  private _flush(): void {
+  /** Open (or reopen) the SQLite database from disk, resetting the WASM heap. */
+  private _openDb(): void {
+    if (fs.existsSync(this.dbPath)) {
+      try {
+        const buf = fs.readFileSync(this.dbPath);
+        this.db = new this._SQL.Database(buf);
+      } catch {
+        // Database file is corrupted — back it up and start fresh.
+        const backupPath = this.dbPath + '.corrupted';
+        try { fs.renameSync(this.dbPath, backupPath); } catch { /* best-effort */ }
+        this.db = new this._SQL.Database();
+        vscode.window.showWarningMessage(
+          'FabricPulse: Local database was corrupted and has been reset. History data was lost.',
+        );
+      }
+    } else {
+      this.db = new this._SQL.Database();
+    }
+    this._opsSinceReopen = 0;
+  }
+
+  /**
+   * Flush to disk, close the old WASM instance, and reopen from the fresh file.
+   * This reclaims WASM heap memory that accumulates over long-running sessions.
+   */
+  private _reopenDb(): void {
+    try {
+      this._flushSync();
+      this.db.close();
+    } catch { /* best-effort */ }
+    this._openDb();
+    console.log('[FabricPulse] DB reopened — WASM heap reset.');
+  }
+
+  /** Track a DB operation and trigger a WASM heap reset when threshold is reached. */
+  private _trackOp(): void {
+    this._opsSinceReopen++;
+    if (this._opsSinceReopen >= StorageService.REOPEN_THRESHOLD) {
+      this._reopenDb();
+    }
+  }
+
+  /** Synchronous flush — writes the in-memory DB to disk immediately. */
+  private _flushSync(): void {
     try {
       const data = this.db.export();
       fs.writeFileSync(this.dbPath, Buffer.from(data));
+      this._dirty = false;
     } catch (err) {
       console.error('[FabricPulse] DB flush failed:', err);
     }
+  }
+
+  /**
+   * Debounced flush — coalesces rapid writes into a single disk write.
+   * Waits 2 seconds after the last mutation before writing to disk.
+   * This dramatically reduces the number of db.export() calls (the main
+   * source of WASM heap growth) during batch operations and polling ticks.
+   */
+  private _flush(): void {
+    this._dirty = true;
+    if (this._flushTimer) clearTimeout(this._flushTimer);
+    this._flushTimer = setTimeout(() => {
+      this._flushTimer = undefined;
+      this._flushSync();
+    }, 2_000);
   }
 
   // ─── Schema ───────────────────────────────────────────────────────────────
@@ -185,6 +238,7 @@ export class StorageService {
   }
 
   getRuns(pipelineId: string, since?: string): StoredRun[] {
+    this._trackOp();
     const sql = since
       ? 'SELECT * FROM pipeline_runs WHERE pipeline_id = ? AND start_time >= ? ORDER BY start_time DESC'
       : 'SELECT * FROM pipeline_runs WHERE pipeline_id = ? ORDER BY start_time DESC';
@@ -193,6 +247,7 @@ export class StorageService {
   }
 
   getLastRun(pipelineId: string): StoredRun | undefined {
+    this._trackOp();
     const result = this.db.exec(
       'SELECT * FROM pipeline_runs WHERE pipeline_id = ? ORDER BY start_time DESC LIMIT 1',
       [pipelineId],
@@ -202,6 +257,7 @@ export class StorageService {
   }
 
   getDurationStats(pipelineId: string): { avg: number | undefined; max: number | undefined; min: number | undefined } {
+    this._trackOp();
     const result = this.db.exec(
       `SELECT
          AVG(duration_ms),
@@ -220,6 +276,7 @@ export class StorageService {
   }
 
   getRunCount(pipelineId: string): number {
+    this._trackOp();
     const result = this.db.exec(
       'SELECT COUNT(*) FROM pipeline_runs WHERE pipeline_id = ?',
       [pipelineId],
@@ -228,6 +285,7 @@ export class StorageService {
   }
 
   getSuccessRate(pipelineId: string, days: number): { rate: number; total: number } {
+    this._trackOp();
     const since = new Date(Date.now() - days * 86_400_000).toISOString();
     const result = this.db.exec(
       `SELECT COUNT(*) AS total,
@@ -242,6 +300,7 @@ export class StorageService {
   }
 
   getTodayStats(tenantId: string): { total: number; failed: number } {
+    this._trackOp();
     const start = new Date();
     start.setHours(0, 0, 0, 0);
     const result = this.db.exec(
@@ -426,7 +485,11 @@ export class StorageService {
   }
 
   close(): void {
-    try { this._flush(); this.db.close(); } catch { /* ignore */ }
+    if (this._flushTimer) {
+      clearTimeout(this._flushTimer);
+      this._flushTimer = undefined;
+    }
+    try { this._flushSync(); this.db.close(); } catch { /* ignore */ }
   }
 
   // ─── Row helpers ──────────────────────────────────────────────────────────

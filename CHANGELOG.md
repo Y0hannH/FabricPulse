@@ -2,9 +2,10 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
-## [1.1.3] - 2026-03-09
+## [1.1.4] - 2026-03-09
 
 ### Fixed
+- Fixed WASM memory leak during long-running sessions — debounced disk flushes and periodic database reopen prevent heap exhaustion
 - Fixed "memory access out of bounds" crash on startup caused by corrupted local database — the extension now auto-recovers by resetting the database and notifying the user
 - Fixed "open2.default is not a function" error caused by ESM/CJS interop issue with the `open` package during Azure authentication
 
