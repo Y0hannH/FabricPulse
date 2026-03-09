@@ -26,11 +26,10 @@ export class StorageService {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const initSqlJs = require('sql.js') as (cfg?: { locateFile(f: string): string }) => Promise<{ Database: new (data?: ArrayLike<number> | Buffer | null) => SqlDatabase }>;
 
-      // The WASM binary lives next to sql-wasm.js in the dist folder
-      const wasmDir = path.dirname(require.resolve('sql.js'));
-
+      // The WASM binary is copied to the same directory as the bundled extension
+      // by the esbuild build script. __dirname points to out/ at runtime.
       const SQL = await initSqlJs({
-        locateFile: (file: string) => path.join(wasmDir, file),
+        locateFile: (file: string) => path.join(__dirname, file),
       });
 
       if (fs.existsSync(this.dbPath)) {

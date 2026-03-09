@@ -1,0 +1,25 @@
+# Source files (bundled by esbuild)
+src/**/*.ts
+src/models/**
+src/panels/**
+src/services/**
+!src/webview/**
+
+# Config & dev files
+.vscode/**
+.claude/**
+.git/**
+.gitignore
+tsconfig.json
+esbuild.js
+.eslintrc.json
+
+# Dependencies (bundled by esbuild)
+node_modules/**
+
+# Maps (not needed in production)
+**/*.map
+
+# Misc
+**/.DS_Store
+*.vsix

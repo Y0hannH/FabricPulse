@@ -21,19 +21,19 @@ You choose which pipelines matter. FabricPulse watches them, stores their histor
 
 | | Feature | Description |
 |---|---|---|
-| 📋 | **Dashboard** | Tableau de tous vos pipelines avec statut coloré, filtre live par workspace et nom |
-| ⭐ | **Favoris** | Marquez les pipelines clés. Vue "Favoris seulement" — chargés en priorité au démarrage |
-| 📊 | **Historique** | Graphe de durée, taux de succès, tableau des runs — stocké localement en SQLite |
-| 🔔 | **Alertes** | Notification VS Code native sur échec ou dépassement de seuil. Rapport quotidien configurable |
-| ⚡ | **Quick Actions** | Re-run, Copy Run ID, Open in Fabric, View History — depuis le tableau |
-| 🧠 | **Pattern Detection** | Détecte si un pipeline échoue souvent le même jour ou la même plage horaire |
-| 🏢 | **Multi-tenant** | Gérez plusieurs tenants Azure / clients depuis un seul panneau |
-| 📤 | **Export** | Export CSV ou JSON de l'historique pour vos rapports clients |
-| 📝 | **Annotations** | Notes manuelles sur des dates pour corréler perfs et déploiements |
-| 🧮 | **Semantic Models** | Monitoring des Semantic Models Power BI/Fabric (refreshes, statuts) |
-| 🔢 | **Total Executions** | Compteur total de runs affiché par pipeline pour qualifier la fréquence |
-| 🚀 | **Smart Loading** | Chargement prioritaire des favoris, batch configurable, cache instantané au démarrage |
-| 🚫 | **Workspace Blacklist** | Excluez des workspaces du polling (par ID ou nom) pour éviter le bruit |
+| 📋 | **Dashboard** | Overview of all your pipelines with color-coded status, live filtering by workspace and name |
+| ⭐ | **Favorites** | Pin key pipelines. "Favorites only" view — loaded first on startup |
+| 📊 | **History** | Duration chart, success rate, run table — stored locally in SQLite |
+| 🔔 | **Alerts** | Native VS Code notifications on failure or threshold breach. Configurable daily report |
+| ⚡ | **Quick Actions** | Re-run, Copy Run ID, Open in Fabric, View History — directly from the table |
+| 🧠 | **Pattern Detection** | Detects if a pipeline frequently fails on the same day or time range |
+| 🏢 | **Multi-tenant** | Manage multiple Azure tenants / clients from a single panel |
+| 📤 | **Export** | CSV or JSON export of run history for client reports |
+| 📝 | **Annotations** | Manual notes on specific dates to correlate performance with deployments |
+| 🧮 | **Semantic Models** | Monitor Power BI / Fabric Semantic Model refreshes and statuses |
+| 🔢 | **Total Executions** | Total run count displayed per pipeline to gauge execution frequency |
+| 🚀 | **Smart Loading** | Priority loading for favorites, configurable batching, instant cache on startup |
+| 🚫 | **Workspace Blacklist** | Exclude workspaces from polling (by ID or name) to reduce noise |
 
 ---
 
@@ -42,16 +42,16 @@ You choose which pipelines matter. FabricPulse watches them, stores their histor
 ### Prerequisites
 
 - VS Code 1.85+
-- Azure CLI installé et configuré (`az login`)
-- Accès à un workspace Microsoft Fabric
+- Azure CLI installed and configured (`az login`)
+- Access to a Microsoft Fabric workspace
 
 ### Installation
 
 ```bash
-# Depuis le marketplace (quand disponible)
+# From the marketplace (when available)
 ext install evolve.fabricpulse
 
-# Depuis la source
+# From source
 git clone https://github.com/evolve/fabricpulse
 cd fabricpulse
 npm install
@@ -60,10 +60,10 @@ npm run compile
 
 ### First Run
 
-1. Ouvrez la Command Palette (`Ctrl+Shift+P`)
-2. Lancez `FabricPulse: Open Dashboard`
-3. Ajoutez votre tenant via `FabricPulse: Add Tenant`
-4. Marquez vos pipelines critiques comme favoris ⭐
+1. Open the Command Palette (`Ctrl+Shift+P`)
+2. Run `FabricPulse: Open Dashboard`
+3. Add your tenant via `FabricPulse: Add Tenant`
+4. Mark your critical pipelines as favorites ⭐
 
 ---
 
@@ -72,11 +72,11 @@ npm run compile
 | Layer | Stack |
 |---|---|
 | Extension Host | TypeScript + VS Code Extension API |
-| UI / Webview | HTML/CSS/JS vanilla — thème VS Code natif |
-| Auth | Azure CLI (`az login`) + fallback browser interactif |
+| UI / Webview | Vanilla HTML/CSS/JS — native VS Code theming |
+| Auth | Azure CLI (`az login`) + interactive browser fallback |
 | API | Microsoft Fabric REST API v1 |
 | Storage | SQLite (`sql.js`) via `globalStorageUri` |
-| Alerting | VS Code Notification API + polling toutes les 60s |
+| Alerting | VS Code Notification API + polling every 60s |
 
 ---
 
@@ -84,10 +84,10 @@ npm run compile
 
 | Command | Description |
 |---|---|
-| `fabricPulse.openDashboard` | Ouvre le dashboard principal |
-| `fabricPulse.addTenant` | Ajoute un tenant Azure |
-| `fabricPulse.exportHistory` | Export CSV de l'historique du pipeline sélectionné |
-| `fabricPulse.clearHistory` | Purge l'historique local |
+| `fabricPulse.openDashboard` | Open the main dashboard |
+| `fabricPulse.addTenant` | Add an Azure tenant |
+| `fabricPulse.exportHistory` | Export CSV history for the selected pipeline |
+| `fabricPulse.clearHistory` | Clear local history |
 
 ---
 
@@ -95,63 +95,63 @@ npm run compile
 
 | Setting | Default | Description |
 |---|---|---|
-| `fabricPulse.pollingInterval` | `60` | Intervalle de refresh en secondes |
-| `fabricPulse.retentionDays` | `90` | Jours de rétention de l'historique |
-| `fabricPulse.dailyReportTime` | `"18:00"` | Heure du rapport quotidien (HH:MM) |
-| `fabricPulse.batchSize` | `5` | Pipelines fetchés par batch |
-| `fabricPulse.batchDelayMs` | `2500` | Délai entre batches (ms) pour éviter le rate limiting |
-| `fabricPulse.batchThreshold` | `10` | Nombre min. de pipelines stale pour déclencher le batching |
-| `fabricPulse.blacklistedWorkspaces` | `[]` | Workspaces exclus du polling (ID ou nom) |
+| `fabricPulse.pollingInterval` | `60` | Auto-refresh interval in seconds |
+| `fabricPulse.retentionDays` | `90` | Number of days to retain run history |
+| `fabricPulse.dailyReportTime` | `"18:00"` | Time for the daily summary report (HH:MM) |
+| `fabricPulse.batchSize` | `5` | Number of pipelines fetched per batch |
+| `fabricPulse.batchDelayMs` | `2500` | Delay between batches (ms) to avoid API rate limiting |
+| `fabricPulse.batchThreshold` | `10` | Minimum number of stale pipelines to trigger batched loading |
+| `fabricPulse.blacklistedWorkspaces` | `[]` | Workspaces excluded from polling (by ID or name) |
 
 ---
 
 ## Local Data & Privacy
 
-FabricPulse ne collecte aucune donnée. Tout est stocké localement :
+FabricPulse does not collect any data. Everything is stored locally:
 
-- **Historique des runs** : SQLite dans le dossier `globalStorage` de VS Code
-- **Favoris et config** : VS Code `globalState`
-- Aucune télémétrie, aucun backend, aucun appel externe hors API Fabric
+- **Run history**: SQLite in VS Code's `globalStorage` directory
+- **Favorites and config**: VS Code `globalState`
+- No telemetry, no backend, no external calls beyond the Fabric API
 
-Rétention par défaut : **90 jours**. Configurable dans les settings.
+Default retention: **90 days**. Configurable in settings.
 
 ---
 
 ## Roadmap
 
 ### ✅ v1.0 — Foundation
-Dashboard, favoris, historique, alertes, multi-tenant, export CSV/JSON, pattern detection, annotations.
+Dashboard, favorites, history, alerts, multi-tenant, CSV/JSON export, pattern detection, annotations.
 
 ### ✅ v1.1 — Semantic Models & Performance
-- Support Semantic Models (Power BI / Fabric refreshes)
-- Chargement prioritaire des favoris au démarrage
-- Batch configurable avec cache instantané
-- Blacklist de workspaces
-- Compteur de runs total par pipeline
-- Fix timezone sur les timestamps de runs
+- Semantic Model support (Power BI / Fabric refreshes)
+- Priority loading for favorites on startup
+- Configurable batching with instant cache
+- Workspace blacklist
+- Total run count per pipeline
+- Timezone fix on run timestamps
 
 ### 🔲 v1.2 — Notebooks & Spark Jobs
-- Support Fabric Notebooks (runs, durées, statuts)
-- Support Spark Jobs
-- Filtres unifiés pipelines + notebooks + semantic models
+- Fabric Notebooks support (runs, durations, statuses)
+- Spark Jobs support
+- Unified filters across pipelines, notebooks, and semantic models
 
 ### 🔲 v1.3 — Run Analysis
-- Comparaison de deux runs d'un même pipeline (paramètres, durées, logs)
-- Diff de configuration entre exécutions
+- Compare two runs of the same pipeline (parameters, durations, logs)
+- Configuration diff between executions
 
 ### 🔲 v2.0 — Sharing & Cross-tenant
-- Export rapport HTML statique (pour partage client)
-- Panel "Pinned Items" cross-tenant : surveiller favoris de plusieurs tenants dans une seule vue
+- Static HTML report export (for client sharing)
+- "Pinned Items" cross-tenant panel: monitor favorites from multiple tenants in a single view
 
 ---
 
 ## Contributing
 
-Le projet est en développement actif. Les contributions seront ouvertes dès la publication du repo.
+The project is under active development. Contributions will be welcome once the repo is published.
 
 - Fork → branch → PR
-- Ouvrez une issue pour discuter d'une feature avant de coder
-- Respectez la convention de nommage existante
+- Open an issue to discuss a feature before coding
+- Follow the existing naming conventions
 
 ---
 

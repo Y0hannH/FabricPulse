@@ -18,7 +18,15 @@
       "Bash(del \"C:\\\\Codes\\\\Evolve\\\\FabricPulse\\\\FabricPulse\\\\nul\")",
       "Bash(npm run compile)",
       "Bash(npx tsc --noEmit)",
-      "Bash(npx @vscode/vsce package)"
+      "Bash(npx @vscode/vsce package)",
+      "Bash(git -C /c/Users/yohan/Documents/Clients/Interne/FabricPulse log --oneline -15)",
+      "Bash(ls -la /c/Users/yohan/Documents/Clients/Interne/FabricPulse/*.md)",
+      "Bash(wc -l /c/Users/yohan/Documents/Clients/Interne/FabricPulse/out/*.js)",
+      "Bash(grep -r \"eslint\\\\|linter\" /c/Users/yohan/Documents/Clients/Interne/FabricPulse/package*.json)",
+      "Bash(ls -la /c/Users/yohan/Documents/Clients/Interne/FabricPulse/node_modules/@*/ -d)",
+      "Bash(npm install --save-dev sharp)",
+      "Bash(node -e \":*)",
+      "Bash(npm install --save-dev esbuild @typescript-eslint/eslint-plugin @typescript-eslint/parser eslint)"
     ]
   }
 }
