@@ -2,6 +2,11 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
+## [1.1.5] - 2026-03-09
+
+### Fixed
+- Fixed multiple authentication popups opening simultaneously when switching tenants with favorites — concurrent token requests are now deduplicated so only a single auth window appears
+
 ## [1.1.4] - 2026-03-09
 
 ### Fixed

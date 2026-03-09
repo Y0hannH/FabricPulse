@@ -12,6 +12,8 @@ export class AuthService {
   private credentials = new Map<string, TokenCredential>();
   /** Cache key: `${tenantId}:${scope}` — one entry per (tenant, scope) pair. */
   private tokenCache = new Map<string, CachedToken>();
+  /** Deduplicates concurrent getToken calls for the same (tenant, scope). */
+  private inflight = new Map<string, Promise<string>>();
 
   async getToken(tenantId: string, scope = FABRIC_SCOPE): Promise<string> {
     const cacheKey = `${tenantId}:${scope}`;
@@ -21,6 +23,20 @@ export class AuthService {
       return cached.token;
     }
 
+    // If a token request is already in-flight, piggyback on it
+    const pending = this.inflight.get(cacheKey);
+    if (pending) { return pending; }
+
+    const promise = this._acquireToken(tenantId, scope, cacheKey);
+    this.inflight.set(cacheKey, promise);
+    try {
+      return await promise;
+    } finally {
+      this.inflight.delete(cacheKey);
+    }
+  }
+
+  private async _acquireToken(tenantId: string, scope: string, cacheKey: string): Promise<string> {
     const credential = await this.getCredential(tenantId);
     const tokenResult = await credential.getToken(scope);
 
