@@ -26,7 +26,8 @@
       "Bash(ls -la /c/Users/yohan/Documents/Clients/Interne/FabricPulse/node_modules/@*/ -d)",
       "Bash(npm install --save-dev sharp)",
       "Bash(node -e \":*)",
-      "Bash(npm install --save-dev esbuild @typescript-eslint/eslint-plugin @typescript-eslint/parser eslint)"
+      "Bash(npm install --save-dev esbuild @typescript-eslint/eslint-plugin @typescript-eslint/parser eslint)",
+      "Bash(npx vsce package)"
     ]
   }
 }

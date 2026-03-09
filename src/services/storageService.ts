@@ -21,26 +21,37 @@ export class StorageService {
     }
     this.dbPath = path.join(storagePath, 'fabricpulse.db');
 
-    try {
-      // sql.js uses WebAssembly — no native compilation needed.
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const initSqlJs = require('sql.js') as (cfg?: { locateFile(f: string): string }) => Promise<{ Database: new (data?: ArrayLike<number> | Buffer | null) => SqlDatabase }>;
+    // sql.js uses WebAssembly — no native compilation needed.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const initSqlJs = require('sql.js') as (cfg?: { locateFile(f: string): string }) => Promise<{ Database: new (data?: ArrayLike<number> | Buffer | null) => SqlDatabase }>;
 
+    let SQL: Awaited<ReturnType<typeof initSqlJs>>;
+    try {
       // The WASM binary is copied to the same directory as the bundled extension
       // by the esbuild build script. __dirname points to out/ at runtime.
-      const SQL = await initSqlJs({
+      SQL = await initSqlJs({
         locateFile: (file: string) => path.join(__dirname, file),
       });
-
-      if (fs.existsSync(this.dbPath)) {
-        const buf = fs.readFileSync(this.dbPath);
-        this.db = new SQL.Database(buf);
-      } else {
-        this.db = new SQL.Database();
-      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`FabricPulse: Failed to initialize SQL.js.\n${msg}`);
+    }
+
+    if (fs.existsSync(this.dbPath)) {
+      try {
+        const buf = fs.readFileSync(this.dbPath);
+        this.db = new SQL.Database(buf);
+      } catch {
+        // Database file is corrupted — back it up and start fresh.
+        const backupPath = this.dbPath + '.corrupted';
+        try { fs.renameSync(this.dbPath, backupPath); } catch { /* best-effort */ }
+        this.db = new SQL.Database();
+        vscode.window.showWarningMessage(
+          'FabricPulse: Local database was corrupted and has been reset. History data was lost.',
+        );
+      }
+    } else {
+      this.db = new SQL.Database();
     }
 
     this.createSchema();

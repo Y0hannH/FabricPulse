@@ -13,6 +13,7 @@ async function main() {
     bundle: true,
     outfile: 'out/extension.js',
     external: ['vscode'],
+    alias: { 'open': './src/shims/open.ts' },
     format: 'cjs',
     platform: 'node',
     target: 'node18',
