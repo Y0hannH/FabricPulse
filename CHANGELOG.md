@@ -2,6 +2,11 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
+## [1.1.6] - 2026-03-10
+
+### Fixed
+- Fixed "Unexpected end of JSON input" error when triggering a pipeline run — the Fabric API returns 202 Accepted with an empty body, which is now handled gracefully
+
 ## [1.1.5] - 2026-03-09
 
 ### Fixed

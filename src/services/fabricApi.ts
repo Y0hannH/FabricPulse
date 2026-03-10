@@ -366,14 +366,36 @@ export class FabricApiService {
     return this._mapRuns(items, pipelineId)[0];
   }
 
-  /** Returns the new job instance ID */
+  /** Returns the new job instance ID (or 'triggered' when the API returns 202 with no body). */
   async triggerPipeline(tenantId: string, workspaceId: string, pipelineId: string): Promise<string> {
-    const result = await this.request<{ id: string }>(
-      tenantId,
-      `/workspaces/${workspaceId}/dataPipelines/${pipelineId}/jobs/instances?jobType=Pipeline`,
-      { method: 'POST', body: '{}' },
+    const token = await this.auth.getToken(tenantId);
+    const path = `/workspaces/${workspaceId}/dataPipelines/${pipelineId}/jobs/instances?jobType=Pipeline`;
+    const url = `${BASE_URL}${path}`;
+
+    const response = await fetchWithRetry(
+      () => fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+      }),
+      path.split('?')[0],
     );
-    return result.id;
+
+    if (!response.ok) {
+      if (response.status === 401) this.auth.clearCredential(tenantId);
+      throw new Error(`Fabric API error ${response.status} on ${path.split('?')[0]}`);
+    }
+
+    // 202 Accepted — body may contain the job instance id or be empty
+    try {
+      const body = await response.json() as { id?: string };
+      return body.id ?? 'triggered';
+    } catch {
+      return 'triggered';
+    }
   }
 
   // ─── Semantic model refreshes (Power BI REST API) ─────────────────────────
