@@ -21,6 +21,9 @@ export class StorageService {
   private _opsSinceReopen = 0;
   private static readonly REOPEN_THRESHOLD = 5_000;
 
+  /** When true, _trackOp will not trigger a reopen (e.g. inside a transaction). */
+  private _inTransaction = false;
+
   constructor(private readonly context: vscode.ExtensionContext) {}
 
   // ─── Init ─────────────────────────────────────────────────────────────────
@@ -89,10 +92,11 @@ export class StorageService {
     console.log('[FabricPulse] DB reopened — WASM heap reset.');
   }
 
-  /** Track a DB operation and trigger a WASM heap reset when threshold is reached. */
+  /** Track a DB operation and trigger a WASM heap reset when threshold is reached.
+   *  Skips reopen if inside a transaction to avoid invalidating the DB mid-operation. */
   private _trackOp(): void {
     this._opsSinceReopen++;
-    if (this._opsSinceReopen >= StorageService.REOPEN_THRESHOLD) {
+    if (!this._inTransaction && this._opsSinceReopen >= StorageService.REOPEN_THRESHOLD) {
       this._reopenDb();
     }
   }
@@ -197,8 +201,17 @@ export class StorageService {
     }
     if (current < 3) {
       // Add item_type column to pipeline_runs and favorites for semantic model support
-      try { this.db.run("ALTER TABLE pipeline_runs ADD COLUMN item_type TEXT DEFAULT 'pipeline'"); } catch { /* already exists */ }
-      try { this.db.run("ALTER TABLE favorites ADD COLUMN item_type TEXT DEFAULT 'pipeline'"); } catch { /* already exists */ }
+      const addColumn = (table: string, col: string, def: string) => {
+        try {
+          this.db.run(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+        } catch (err: unknown) {
+          // "duplicate column name" is expected if column already exists — anything else is a real error
+          const msg = err instanceof Error ? err.message : '';
+          if (!msg.includes('duplicate column')) throw err;
+        }
+      };
+      addColumn('pipeline_runs', 'item_type', "TEXT DEFAULT 'pipeline'");
+      addColumn('favorites', 'item_type', "TEXT DEFAULT 'pipeline'");
       this.db.run('UPDATE schema_version SET version = 3');
       this._flush();
     }
@@ -221,19 +234,28 @@ export class StorageService {
 
   upsertRunsBatch(runs: StoredRun[]): void {
     if (runs.length === 0) return;
+    this._inTransaction = true;
     this.db.run('BEGIN');
-    for (const run of runs) {
-      this.db.run(
-        `INSERT OR REPLACE INTO pipeline_runs
-           (tenant_id, workspace_id, pipeline_id, pipeline_name, workspace_name,
-            run_id, status, start_time, end_time, duration_ms, error_message, item_type)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [run.tenantId, run.workspaceId, run.pipelineId, run.pipelineName, run.workspaceName,
-         run.runId, run.status, run.startTime ?? null, run.endTime ?? null,
-         run.durationMs ?? null, run.errorMessage ?? null, run.itemType ?? 'pipeline'],
-      );
+    try {
+      for (const run of runs) {
+        this.db.run(
+          `INSERT OR REPLACE INTO pipeline_runs
+             (tenant_id, workspace_id, pipeline_id, pipeline_name, workspace_name,
+              run_id, status, start_time, end_time, duration_ms, error_message, item_type)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+          [run.tenantId, run.workspaceId, run.pipelineId, run.pipelineName, run.workspaceName,
+           run.runId, run.status, run.startTime ?? null, run.endTime ?? null,
+           run.durationMs ?? null, run.errorMessage ?? null, run.itemType ?? 'pipeline'],
+        );
+      }
+      this.db.run('COMMIT');
+    } catch (err) {
+      try { this.db.run('ROLLBACK'); } catch { /* already rolled back */ }
+      throw err;
+    } finally {
+      this._inTransaction = false;
     }
-    this.db.run('COMMIT');
+    this._trackOp();
     this._flush();
   }
 
