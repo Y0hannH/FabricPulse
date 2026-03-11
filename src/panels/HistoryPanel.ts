@@ -117,6 +117,10 @@ export class HistoryPanel {
 
   // ─── Message handling ────────────────────────────────────────────────────────
 
+  private static readonly VALID_PERIODS = new Set(['7d', '30d', '90d', 'all']);
+  private static readonly DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  private static readonly MAX_NOTE_LENGTH = 500;
+
   private async _handleMessage(msg: HistoryToExtMsg): Promise<void> {
     switch (msg.type) {
 
@@ -125,11 +129,23 @@ export class HistoryPanel {
         break;
 
       case 'setPeriod':
+        if (!HistoryPanel.VALID_PERIODS.has(msg.period)) {
+          console.warn(`[FabricPulse] Invalid period: ${msg.period}`);
+          break;
+        }
         this._period = msg.period;
         this._sendData();
         break;
 
       case 'addAnnotation':
+        if (!HistoryPanel.DATE_RE.test(msg.date)) {
+          console.warn(`[FabricPulse] Invalid annotation date: ${msg.date}`);
+          break;
+        }
+        if (typeof msg.note !== 'string' || msg.note.length === 0 || msg.note.length > HistoryPanel.MAX_NOTE_LENGTH) {
+          console.warn('[FabricPulse] Invalid annotation note');
+          break;
+        }
         this._storage.addAnnotation({
           pipelineId: this._pipeline.id,
           date: msg.date,

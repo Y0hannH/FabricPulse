@@ -406,7 +406,66 @@ export class DashboardPanel {
 
   // ─── Message handling ────────────────────────────────────────────────────────
 
+  /** Runtime validation of webview messages. TypeScript types are erased at
+   *  runtime; the webview is a less-trusted context so we validate IDs and
+   *  constrain freetext before processing. Returns false if the message is invalid. */
+  private _validateMsg(msg: WebviewToExtMsg): boolean {
+    const fail = (reason: string) => {
+      console.warn(`[FabricPulse] Invalid webview message (${msg.type}): ${reason}`);
+      return false;
+    };
+
+    switch (msg.type) {
+      case 'selectTenant':
+        if (!isUuid(msg.tenantId)) return fail('bad tenantId');
+        break;
+
+      case 'selectWorkspace':
+        if (!isUuid(msg.workspaceId)) return fail('bad workspaceId');
+        break;
+
+      case 'toggleWorkspaceFavorite':
+        if (!isUuid(msg.workspaceId)) return fail('bad workspaceId');
+        break;
+
+      case 'blacklistWorkspace':
+        if (!isUuid(msg.workspaceId)) return fail('bad workspaceId');
+        if (typeof msg.workspaceName !== 'string' || msg.workspaceName.length > 256) return fail('bad workspaceName');
+        break;
+
+      case 'toggleFavorite':
+      case 'refreshPipeline':
+      case 'fetchPipelineHistory':
+      case 'rerunPipeline':
+        if (!isUuid(msg.pipelineId) || !isUuid(msg.workspaceId)) return fail('bad pipelineId/workspaceId');
+        break;
+
+      case 'openInFabric':
+        if (!isUuid(msg.pipelineId) || !isUuid(msg.workspaceId) || !isUuid(msg.tenantId)) return fail('bad UUID');
+        break;
+
+      case 'viewHistory':
+        if (!isUuid(msg.pipelineId) || !isUuid(msg.workspaceId)) return fail('bad pipelineId/workspaceId');
+        if (typeof msg.pipelineName !== 'string' || msg.pipelineName.length > 256) return fail('bad pipelineName');
+        if (typeof msg.workspaceName !== 'string' || msg.workspaceName.length > 256) return fail('bad workspaceName');
+        break;
+
+      case 'copyRunId':
+        if (typeof msg.runId !== 'string' || msg.runId.length > 128) return fail('bad runId');
+        break;
+
+      case 'exportHistory':
+        if (!isUuid(msg.pipelineId)) return fail('bad pipelineId');
+        break;
+    }
+
+    return true;
+  }
+
   private async _handleMessage(msg: WebviewToExtMsg): Promise<void> {
+
+    if (!this._validateMsg(msg)) return;
+
     switch (msg.type) {
 
       case 'ready':
@@ -602,11 +661,7 @@ export class DashboardPanel {
         break;
 
       case 'openInFabric': {
-        // Validate GUIDs before constructing URL to prevent open redirect
-        if (!isUuid(msg.workspaceId) || !isUuid(msg.pipelineId)) {
-          this._post({ type: 'toast', message: 'Invalid workspace or item ID', level: 'error' });
-          break;
-        }
+        // UUIDs already validated by _validateMsg
         const isModel = (msg.itemType ?? 'pipeline') === 'semanticModel';
         const url = isModel
           ? `https://app.fabric.microsoft.com/groups/${msg.workspaceId}/semanticmodels/${msg.pipelineId}`
