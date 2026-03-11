@@ -105,9 +105,9 @@ function drawChart(/** @type {any[]} */ runs) {
   const cW = W - PAD.left - PAD.right;
   const cH = H - PAD.top  - PAD.bottom;
 
-  // Sort ascending by time; keep only runs with a duration
+  // Sort ascending by time; keep only runs with a duration and a valid start time
   const valid = runs
-    .filter(r => r.durationMs != null)
+    .filter(r => r.durationMs != null && r.startTime)
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
   const mutedColor = getCssVar('--vscode-descriptionForeground', '#888888');
@@ -187,7 +187,7 @@ function renderPatterns(/** @type {any[]} */ patterns) {
   dom.patternsSection.innerHTML = patterns.map(p => `
     <div class="pattern-warn">
       ⚠ ${esc(p.description)}
-      <span class="muted" style="font-size:10px">(${p.failureCount}/${p.totalFailures} failures)</span>
+      <span class="muted" style="font-size:10px">(${esc(String(p.failureCount))}/${esc(String(p.totalFailures))} failures)</span>
     </div>
   `).join('');
 }

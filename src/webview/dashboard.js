@@ -287,15 +287,15 @@ function buildRowHtml(/** @type {any} */ p) {
   <td class="col-workspace muted" title="${esc(p.workspaceName)}">${esc(p.workspaceName)}</td>
   <td class="col-status">
     ${run
-      ? `<span class="status-badge status-${statusClass}">${statusLabel}</span><span class="time-ago muted">${timeAgo}</span>`
+      ? `<span class="status-badge status-${statusClass}">${esc(statusLabel)}</span><span class="time-ago muted">${esc(timeAgo)}</span>`
       : '<span class="muted">—</span>'}
   </td>
-  <td class="col-duration" style="text-align:right">${duration}</td>
-  <td class="col-dur-avg muted" style="text-align:right" title="Avg duration (all runs)">${avgDur}</td>
-  <td class="col-dur-min muted" style="text-align:right" title="Min duration (succeeded only)">${minDur}</td>
-  <td class="col-dur-max muted" style="text-align:right" title="Max duration (succeeded only)">${maxDur}</td>
-  <td class="col-rate ${rateCls}" style="text-align:right">${rateText}</td>
-  <td class="col-runs" style="text-align:right">${p.cachedRunCount != null ? p.cachedRunCount : '—'}</td>
+  <td class="col-duration" style="text-align:right">${esc(duration)}</td>
+  <td class="col-dur-avg muted" style="text-align:right" title="Avg duration (all runs)">${esc(avgDur)}</td>
+  <td class="col-dur-min muted" style="text-align:right" title="Min duration (succeeded only)">${esc(minDur)}</td>
+  <td class="col-dur-max muted" style="text-align:right" title="Max duration (succeeded only)">${esc(maxDur)}</td>
+  <td class="col-rate ${rateCls}" style="text-align:right">${esc(rateText)}</td>
+  <td class="col-runs" style="text-align:right">${p.cachedRunCount != null ? esc(String(p.cachedRunCount)) : '—'}</td>
 </tr>`;
 }
 

@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import { DashboardPanel } from './panels/DashboardPanel';
-import { HistoryPanel } from './panels/HistoryPanel';
 import { FabricApiService } from './services/fabricApi';
 import { AuthService } from './services/authService';
 import { StorageService } from './services/storageService';
@@ -124,10 +123,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // Internal: open history for a specific pipeline ────────────────────────
     vscode.commands.registerCommand('fabricPulse.openHistory', async (pipelineId: string) => {
-      if (DashboardPanel.currentPanel) {
+      if (!pipelineId) return;
+      // Try to reconstruct a Pipeline object from storage so we can open HistoryPanel
+      const lastRun = _storage.getLastRun(pipelineId);
+      if (lastRun) {
+        const { HistoryPanel: HP } = await import('./panels/HistoryPanel');
+        HP.createOrShow(context.extensionUri, {
+          id: pipelineId,
+          displayName: lastRun.pipelineName,
+          workspaceId: lastRun.workspaceId,
+          workspaceName: lastRun.workspaceName,
+          tenantId: lastRun.tenantId,
+          itemType: (lastRun.itemType as 'pipeline' | 'semanticModel') ?? 'pipeline',
+        }, _storage);
+      } else if (DashboardPanel.currentPanel) {
+        // Fallback: refresh the dashboard if we can't find the pipeline in storage
         await DashboardPanel.currentPanel.refresh();
       }
-      // HistoryPanel.createOrShow is called from the dashboard message handler
     }),
 
   );
