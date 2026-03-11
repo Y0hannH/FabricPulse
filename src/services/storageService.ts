@@ -282,7 +282,7 @@ export class StorageService {
     this._trackOp();
     const result = this.db.exec(
       `SELECT
-         AVG(duration_ms),
+         AVG(CASE WHEN status = 'Succeeded' THEN duration_ms END),
          MAX(CASE WHEN status = 'Succeeded' THEN duration_ms END),
          MIN(CASE WHEN status = 'Succeeded' THEN duration_ms END)
        FROM pipeline_runs WHERE pipeline_id = ? AND duration_ms IS NOT NULL`,
@@ -484,14 +484,14 @@ export class StorageService {
   private cleanupOldData(): void {
     const days = vscode.workspace.getConfiguration('fabricPulse').get<number>('retentionDays', 90);
     const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
-    this.db.run('DELETE FROM pipeline_runs WHERE created_at < ?', [cutoff]);
+    this.db.run('DELETE FROM pipeline_runs WHERE start_time < ? OR (start_time IS NULL AND created_at < ?)', [cutoff, cutoff]);
   }
 
   exportRunsCsv(pipelineId: string, since?: string): string {
     const runs = this.getRuns(pipelineId, since);
     const headers = ['run_id', 'status', 'start_time', 'end_time', 'duration_ms', 'error_message'];
     const rows = runs.map(r =>
-      [r.runId, r.status, r.startTime, r.endTime ?? '', String(r.durationMs ?? ''), r.errorMessage ?? '']
+      [r.runId, r.status, r.startTime ?? '', r.endTime ?? '', String(r.durationMs ?? ''), r.errorMessage ?? '']
         .map(v => csvCell(v)).join(','),
     );
     return [headers.join(','), ...rows].join('\n');

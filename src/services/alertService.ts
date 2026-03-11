@@ -6,10 +6,11 @@ import { PipelineWithStatus } from '../models/types';
  *  evicted FIFO once this limit is reached.  Prevents unbounded growth. */
 const MAX_ALERTED_RUNS = 500;
 const ALERTED_STATE_KEY = 'fabricPulse.alertedRunIds';
+const DAILY_REPORT_DATE_KEY = 'fabricPulse.lastDailyReportDate';
 
 export class AlertService {
   private dailyReportTimer?: ReturnType<typeof setInterval>;
-  private lastDailyReportDate = '';
+  private lastDailyReportDate: string;
 
   /** In-memory copy of alerted run IDs, synced to globalState. */
   private _alertedIds: Set<string>;
@@ -21,6 +22,7 @@ export class AlertService {
     // Hydrate from persisted state
     const persisted = context.globalState.get<string[]>(ALERTED_STATE_KEY, []);
     this._alertedIds = new Set(persisted);
+    this.lastDailyReportDate = context.globalState.get<string>(DAILY_REPORT_DATE_KEY, '');
   }
 
   /** Returns true if this run was already alerted. */
@@ -123,6 +125,7 @@ export class AlertService {
         this.lastDailyReportDate !== today
       ) {
         this.lastDailyReportDate = today;
+        this.context.globalState.update(DAILY_REPORT_DATE_KEY, today);
         this.sendDailyReport(tenantId);
       }
     }, 60_000);

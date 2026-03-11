@@ -31,7 +31,7 @@ export interface PipelineRun {
   pipelineId: string;
   runId: string;
   status: RunStatus;
-  startTime: string;
+  startTime?: string;
   endTime?: string;
   durationMs?: number;
   errorMessage?: string;
@@ -60,7 +60,7 @@ export interface StoredRun {
   workspaceName: string;
   runId: string;
   status: string;
-  startTime: string;
+  startTime?: string;
   endTime?: string;
   durationMs?: number;
   errorMessage?: string;

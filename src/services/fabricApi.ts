@@ -49,7 +49,7 @@ async function fetchWithRetry(
   }
 
   // Should never reach here but TypeScript requires a return
-  return fn();
+  throw new Error(`[FabricPulse] fetchWithRetry: exhausted all retries on ${label}`);
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -293,14 +293,14 @@ export class FabricApiService {
         pipelineId: itemId,
         runId: r.id,
         status: this.normalizeStatus(r.status),
-        startTime: startIso ?? new Date().toISOString(),
+        startTime: startIso,
         endTime: endIso,
         durationMs,
         errorMessage: r.failureReason?.message,
       };
     });
 
-    runs.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+    runs.sort((a, b) => (b.startTime ?? '').localeCompare(a.startTime ?? ''));
     return runs;
   }
 
@@ -320,9 +320,10 @@ export class FabricApiService {
       if (r.serviceExceptionJson) {
         try {
           const exc = JSON.parse(r.serviceExceptionJson);
-          errorMessage = exc.errorDescription ?? exc.message ?? exc.errorCode;
+          errorMessage = exc.errorDescription ?? exc.message ?? exc.errorCode ?? 'Unknown error';
         } catch {
-          errorMessage = r.serviceExceptionJson;
+          // Raw JSON is malformed — expose a safe summary instead of the raw string
+          errorMessage = 'Refresh failed (unparseable error details)';
         }
       }
 
@@ -333,14 +334,14 @@ export class FabricApiService {
         pipelineId: modelId,
         runId,
         status: this.normalizeStatus(r.status),
-        startTime: startIso ?? new Date().toISOString(),
+        startTime: startIso,
         endTime: endIso,
         durationMs,
         errorMessage,
       };
     });
 
-    runs.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+    runs.sort((a, b) => (b.startTime ?? '').localeCompare(a.startTime ?? ''));
     return runs;
   }
 
