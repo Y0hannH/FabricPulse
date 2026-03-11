@@ -10,7 +10,7 @@ import { Tenant } from './models/types';
 // Services (initialized in activate, used across commands)
 let _storage: StorageService;
 let _alertService: AlertService;
-let _pollingTimer: ReturnType<typeof setInterval> | undefined;
+let _pollingTimer: ReturnType<typeof setTimeout> | undefined;
 
 // ─── Extension activation ─────────────────────────────────────────────────────
 
@@ -176,7 +176,7 @@ function startPolling(panel: DashboardPanel): void {
 
 function stopPolling(): void {
   if (_pollingTimer !== undefined) {
-    clearInterval(_pollingTimer);
+    clearTimeout(_pollingTimer);
     _pollingTimer = undefined;
   }
 }

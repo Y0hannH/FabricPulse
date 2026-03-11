@@ -105,16 +105,21 @@ export class AlertService {
   scheduleDailyReport(tenantId: string): void {
     this.stopDailyReport();
 
-    // Check every minute whether it's report time
+    // Check every minute whether it's report time.
+    // Uses >= comparison to avoid missing the target minute due to timer drift.
     this.dailyReportTimer = setInterval(() => {
       const now = new Date();
       const cfg = vscode.workspace.getConfiguration('fabricPulse').get<string>('dailyReportTime', '18:00');
       const [targetHour, targetMin] = cfg.split(':').map(Number);
+
+      if (isNaN(targetHour) || isNaN(targetMin)) return; // guard against malformed config
+
       const today = now.toDateString();
+      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+      const targetMinutes = targetHour * 60 + targetMin;
 
       if (
-        now.getHours() === targetHour &&
-        now.getMinutes() === targetMin &&
+        nowMinutes >= targetMinutes &&
         this.lastDailyReportDate !== today
       ) {
         this.lastDailyReportDate = today;

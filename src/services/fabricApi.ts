@@ -5,6 +5,8 @@ import { Workspace, Pipeline, PipelineRun, RunStatus } from '../models/types';
 const BASE_URL = 'https://api.fabric.microsoft.com/v1';
 const POWERBI_BASE_URL = 'https://api.powerbi.com/v1.0/myorg';
 const MAX_RETRIES = 3;
+const FETCH_TIMEOUT_MS = 30_000;        // 30 s per request — prevents indefinite hangs
+const MAX_RETRY_WAIT_MS = 60_000;       // never wait more than 60 s regardless of Retry-After header
 
 /** Ensure a UTC datetime string from the Fabric API has a trailing 'Z'.
  *  The API returns fields named *Utc but omits the timezone designator,
@@ -40,7 +42,7 @@ async function fetchWithRetry(
     const retrySecs = retryAfterHeader ? parseInt(retryAfterHeader, 10) : NaN;
     const waitMs = isNaN(retrySecs)
       ? Math.min(1000 * 2 ** attempt, 30_000) // exponential backoff, capped at 30 s
-      : retrySecs * 1000;
+      : Math.min(retrySecs * 1000, MAX_RETRY_WAIT_MS);
 
     console.warn(`[FabricPulse] 429 rate limit on ${label} — retrying in ${waitMs}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
     await sleep(waitMs);
@@ -142,6 +144,7 @@ export class FabricApiService {
           'Content-Type': 'application/json',
         },
         body: options?.body,
+        timeout: FETCH_TIMEOUT_MS,
       }),
       path.split('?')[0],
     );
@@ -162,7 +165,6 @@ export class FabricApiService {
     const MAX_PAGES = 50;
     const MAX_ITEMS = 5_000;
 
-    const token = await this.auth.getToken(tenantId);
     const results: T[] = [];
     let url: string | undefined = `${BASE_URL}${path}`;
     let pages = 0;
@@ -177,10 +179,13 @@ export class FabricApiService {
         break;
       }
 
+      // Refresh token on each page to avoid expiry during long pagination sequences
+      const token = await this.auth.getToken(tenantId);
       const currentUrl = url;
       const response = await fetchWithRetry(
         () => fetch(currentUrl, {
           headers: { 'Authorization': `Bearer ${token}` },
+          timeout: FETCH_TIMEOUT_MS,
         }),
         path.split('?')[0],
       );
@@ -217,6 +222,7 @@ export class FabricApiService {
           'Content-Type': 'application/json',
         },
         body: options?.body,
+        timeout: FETCH_TIMEOUT_MS,
       }),
       `[PBI] ${path.split('?')[0]}`,
     );
@@ -236,7 +242,6 @@ export class FabricApiService {
     const MAX_PAGES = 20;
     const MAX_ITEMS = 5_000;
 
-    const token = await this.auth.getToken(tenantId, POWERBI_SCOPE);
     const results: T[] = [];
     let url: string | undefined = `${POWERBI_BASE_URL}${path}`;
     let pages = 0;
@@ -244,10 +249,13 @@ export class FabricApiService {
     while (url) {
       if (pages >= MAX_PAGES || results.length >= MAX_ITEMS) break;
 
+      // Refresh token on each page to avoid expiry during long pagination sequences
+      const token = await this.auth.getToken(tenantId, POWERBI_SCOPE);
       const currentUrl = url;
       const response = await fetchWithRetry(
         () => fetch(currentUrl, {
           headers: { 'Authorization': `Bearer ${token}` },
+          timeout: FETCH_TIMEOUT_MS,
         }),
         `[PBI] ${path.split('?')[0]}`,
       );
@@ -417,6 +425,7 @@ export class FabricApiService {
           'Content-Type': 'application/json',
         },
         body: '{}',
+        timeout: FETCH_TIMEOUT_MS,
       }),
       path.split('?')[0],
     );
@@ -479,6 +488,7 @@ export class FabricApiService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ notifyOption: 'NoNotification' }),
+        timeout: FETCH_TIMEOUT_MS,
       }),
       '[PBI] /groups/.../datasets/.../refreshes',
     );

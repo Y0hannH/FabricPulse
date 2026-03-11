@@ -197,38 +197,42 @@ export class DashboardPanel {
             return (Date.now() - lastFetched) >= pollingMs;
           });
 
-          await Promise.all(staleFavorites.map(async fav => {
-            const item = this._pipelines.find(p => p.id === fav.pipelineId);
-            try {
-              const isModel = (fav.itemType ?? 'pipeline') === 'semanticModel';
-              const run = isModel
-                ? await this._fabricApi.getLastSemanticModelRun(this._currentTenantId, fav.workspaceId, fav.pipelineId)
-                : await this._fabricApi.getLastPipelineRun(this._currentTenantId, fav.workspaceId, fav.pipelineId);
-              if (run) {
-                this._storage.upsertRunsBatch([{
-                  tenantId: this._currentTenantId,
-                  workspaceId: fav.workspaceId,
-                  pipelineId: fav.pipelineId,
-                  pipelineName: item?.displayName ?? fav.pipelineId,
-                  workspaceName: wsMap.get(fav.workspaceId)?.displayName ?? fav.workspaceId,
-                  runId: run.runId,
-                  status: run.status,
-                  startTime: run.startTime,
-                  endTime: run.endTime,
-                  durationMs: run.durationMs,
-                  errorMessage: run.errorMessage,
-                  itemType: fav.itemType ?? 'pipeline',
-                }]);
-                const idx = this._pipelines.findIndex(p => p.id === fav.pipelineId);
-                if (idx !== -1) {
-                  this._pipelines[idx] = { ...this._pipelines[idx], lastRun: run };
+          const favBatchSize = cfg.get<number>('batchSize', 5);
+          for (let i = 0; i < staleFavorites.length; i += favBatchSize) {
+            const batch = staleFavorites.slice(i, i + favBatchSize);
+            await Promise.all(batch.map(async fav => {
+              const item = this._pipelines.find(p => p.id === fav.pipelineId);
+              try {
+                const isModel = (fav.itemType ?? 'pipeline') === 'semanticModel';
+                const run = isModel
+                  ? await this._fabricApi.getLastSemanticModelRun(this._currentTenantId, fav.workspaceId, fav.pipelineId)
+                  : await this._fabricApi.getLastPipelineRun(this._currentTenantId, fav.workspaceId, fav.pipelineId);
+                if (run) {
+                  this._storage.upsertRunsBatch([{
+                    tenantId: this._currentTenantId,
+                    workspaceId: fav.workspaceId,
+                    pipelineId: fav.pipelineId,
+                    pipelineName: item?.displayName ?? fav.pipelineId,
+                    workspaceName: wsMap.get(fav.workspaceId)?.displayName ?? fav.workspaceId,
+                    runId: run.runId,
+                    status: run.status,
+                    startTime: run.startTime,
+                    endTime: run.endTime,
+                    durationMs: run.durationMs,
+                    errorMessage: run.errorMessage,
+                    itemType: fav.itemType ?? 'pipeline',
+                  }]);
+                  const idx = this._pipelines.findIndex(p => p.id === fav.pipelineId);
+                  if (idx !== -1) {
+                    this._pipelines[idx] = { ...this._pipelines[idx], lastRun: run };
+                  }
                 }
+                this._runsFetchedAt.set(fav.pipelineId, Date.now());
+              } catch (err) {
+                console.warn(`[FabricPulse] Could not fetch run for favorite ${fav.pipelineId}:`, err);
               }
-              this._runsFetchedAt.set(fav.pipelineId, Date.now());
-            } catch (err) {
-              console.warn(`[FabricPulse] Could not fetch run for favorite ${fav.pipelineId}:`, err);
-            }
-          }));
+            }));
+          }
 
           this._isFromCache = false;
           this._lastRefreshed = new Date().toISOString();
