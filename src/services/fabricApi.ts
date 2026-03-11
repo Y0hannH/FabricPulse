@@ -50,6 +50,18 @@ async function fetchWithRetry(
   return fn();
 }
 
+/** Validates that a pagination URL returned by the API points to the expected origin.
+ *  Prevents SSRF / token exfiltration if an API response is tampered with. */
+function isSafeNextUrl(nextUrl: string, expectedBase: string): boolean {
+  try {
+    const next = new URL(nextUrl);
+    const base = new URL(expectedBase);
+    return next.origin === base.origin;
+  } catch {
+    return false;
+  }
+}
+
 // ─── Response interfaces ─────────────────────────────────────────────────────
 
 interface FabricListResponse<T> {
@@ -167,7 +179,8 @@ export class FabricApiService {
 
       const data = await response.json() as FabricListResponse<T>;
       results.push(...(data.value ?? []));
-      url = data.continuationUri;
+      const nextUri = data.continuationUri;
+      url = nextUri && isSafeNextUrl(nextUri, BASE_URL) ? nextUri : undefined;
       pages++;
     }
 
@@ -230,7 +243,8 @@ export class FabricApiService {
 
       const data = await response.json() as PbiListResponse<T>;
       results.push(...(data.value ?? []));
-      url = data['@odata.nextLink'];
+      const nextLink = data['@odata.nextLink'];
+      url = nextLink && isSafeNextUrl(nextLink, POWERBI_BASE_URL) ? nextLink : undefined;
       pages++;
     }
 
