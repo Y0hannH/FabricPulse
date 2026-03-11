@@ -50,6 +50,30 @@ async function fetchWithRetry(
   return fn();
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Throws if any of the given ID strings is not a valid UUID.
+ *  Prevents path-injection when IDs are interpolated into API URLs. */
+function assertUuids(...ids: string[]): void {
+  for (const id of ids) {
+    if (!UUID_RE.test(id)) {
+      throw new Error(`Invalid UUID: ${id}`);
+    }
+  }
+}
+
+/** Validates that a pagination URL returned by the API points to the expected origin.
+ *  Prevents SSRF / token exfiltration if an API response is tampered with. */
+function isSafeNextUrl(nextUrl: string, expectedBase: string): boolean {
+  try {
+    const next = new URL(nextUrl);
+    const base = new URL(expectedBase);
+    return next.origin === base.origin;
+  } catch {
+    return false;
+  }
+}
+
 // ─── Response interfaces ─────────────────────────────────────────────────────
 
 interface FabricListResponse<T> {
@@ -162,12 +186,16 @@ export class FabricApiService {
       );
 
       if (!response.ok) {
+        if (response.status === 401) {
+          this.auth.clearCredential(tenantId);
+        }
         throw new Error(`Fabric API error ${response.status} on ${path.split('?')[0]}`);
       }
 
       const data = await response.json() as FabricListResponse<T>;
       results.push(...(data.value ?? []));
-      url = data.continuationUri;
+      const nextUri = data.continuationUri;
+      url = nextUri && isSafeNextUrl(nextUri, BASE_URL) ? nextUri : undefined;
       pages++;
     }
 
@@ -225,12 +253,16 @@ export class FabricApiService {
       );
 
       if (!response.ok) {
+        if (response.status === 401) {
+          this.auth.clearCredential(tenantId);
+        }
         throw new Error(`Power BI API error ${response.status} on ${path.split('?')[0]}`);
       }
 
       const data = await response.json() as PbiListResponse<T>;
       results.push(...(data.value ?? []));
-      url = data['@odata.nextLink'];
+      const nextLink = data['@odata.nextLink'];
+      url = nextLink && isSafeNextUrl(nextLink, POWERBI_BASE_URL) ? nextLink : undefined;
       pages++;
     }
 
@@ -318,6 +350,7 @@ export class FabricApiService {
   }
 
   async getPipelines(tenantId: string, workspaceId: string): Promise<Pipeline[]> {
+    assertUuids(workspaceId);
     const items = await this.listAll<FabricPipeline>(tenantId, `/workspaces/${workspaceId}/dataPipelines`);
     return items.map(p => ({
       id: p.id,
@@ -330,6 +363,7 @@ export class FabricApiService {
   }
 
   async getSemanticModels(tenantId: string, workspaceId: string): Promise<Pipeline[]> {
+    assertUuids(workspaceId);
     const items = await this.listAll<FabricPipeline>(tenantId, `/workspaces/${workspaceId}/semanticModels`);
     return items.map(p => ({
       id: p.id,
@@ -348,6 +382,7 @@ export class FabricApiService {
     workspaceId: string,
     pipelineId: string,
   ): Promise<PipelineRun[]> {
+    assertUuids(workspaceId, pipelineId);
     const path = `/workspaces/${workspaceId}/dataPipelines/${pipelineId}/jobs/instances`;
     const items = await this.listAll<FabricRun>(tenantId, path);
     return this._mapRuns(items, pipelineId);
@@ -359,6 +394,7 @@ export class FabricApiService {
     workspaceId: string,
     pipelineId: string,
   ): Promise<PipelineRun | undefined> {
+    assertUuids(workspaceId, pipelineId);
     const path = `/workspaces/${workspaceId}/dataPipelines/${pipelineId}/jobs/instances`;
     const data = await this.request<FabricListResponse<FabricRun>>(tenantId, path);
     const items = data.value ?? [];
@@ -368,6 +404,7 @@ export class FabricApiService {
 
   /** Returns the new job instance ID (or 'triggered' when the API returns 202 with no body). */
   async triggerPipeline(tenantId: string, workspaceId: string, pipelineId: string): Promise<string> {
+    assertUuids(workspaceId, pipelineId);
     const token = await this.auth.getToken(tenantId);
     const path = `/workspaces/${workspaceId}/dataPipelines/${pipelineId}/jobs/instances?jobType=Pipeline`;
     const url = `${BASE_URL}${path}`;
@@ -407,6 +444,7 @@ export class FabricApiService {
     workspaceId: string,
     modelId: string,
   ): Promise<PipelineRun[]> {
+    assertUuids(workspaceId, modelId);
     const path = `/groups/${workspaceId}/datasets/${modelId}/refreshes`;
     const items = await this.listAllPbi<PbiRefreshItem>(tenantId, path);
     return this._mapRefreshHistory(items, modelId);
@@ -418,6 +456,7 @@ export class FabricApiService {
     workspaceId: string,
     modelId: string,
   ): Promise<PipelineRun | undefined> {
+    assertUuids(workspaceId, modelId);
     const path = `/groups/${workspaceId}/datasets/${modelId}/refreshes?$top=1`;
     const data = await this.requestPbi<PbiListResponse<PbiRefreshItem>>(tenantId, path);
     const items = data.value ?? [];
@@ -428,6 +467,7 @@ export class FabricApiService {
   /** Triggers a semantic model refresh via Power BI REST API.
    *  POST returns 202 Accepted. */
   async triggerSemanticModelRefresh(tenantId: string, workspaceId: string, modelId: string): Promise<string> {
+    assertUuids(workspaceId, modelId);
     const token = await this.auth.getToken(tenantId, POWERBI_SCOPE);
     const url = `${POWERBI_BASE_URL}/groups/${workspaceId}/datasets/${modelId}/refreshes`;
 
