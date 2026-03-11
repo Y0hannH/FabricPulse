@@ -186,6 +186,9 @@ export class FabricApiService {
       );
 
       if (!response.ok) {
+        if (response.status === 401) {
+          this.auth.clearCredential(tenantId);
+        }
         throw new Error(`Fabric API error ${response.status} on ${path.split('?')[0]}`);
       }
 
@@ -250,6 +253,9 @@ export class FabricApiService {
       );
 
       if (!response.ok) {
+        if (response.status === 401) {
+          this.auth.clearCredential(tenantId);
+        }
         throw new Error(`Power BI API error ${response.status} on ${path.split('?')[0]}`);
       }
 
