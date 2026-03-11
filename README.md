@@ -3,7 +3,7 @@
 > Real-time pulse of your Microsoft Fabric pipelines — right inside VS Code.
 
 ![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.85-007ACC?style=flat-square&logo=visualstudiocode)
-![Version](https://img.shields.io/badge/Version-1.1.6-blue?style=flat-square)
+![Version](https://img.shields.io/badge/Version-1.2.1-blue?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-00B4D8?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-In%20Development-orange?style=flat-square)
 
@@ -119,10 +119,10 @@ Default retention: **90 days**. Configurable in settings.
 
 ## Roadmap
 
-### ✅ v1.0 — Foundation
+### ✅ Foundation
 Dashboard, favorites, history, alerts, multi-tenant, CSV/JSON export, pattern detection, annotations.
 
-### ✅ v1.1 — Semantic Models & Performance
+### ✅ Semantic Models & Performance
 - Semantic Model support (Power BI / Fabric refreshes)
 - Priority loading for favorites on startup
 - Configurable batching with instant cache
@@ -130,16 +130,21 @@ Dashboard, favorites, history, alerts, multi-tenant, CSV/JSON export, pattern de
 - Total run count per pipeline
 - Timezone fix on run timestamps
 
-### 🔲 v1.2 — Notebooks & Spark Jobs
+### ✅ Security & Bug Hardening
+- SSRF prevention, UUID validation, webview message validation, XSS hardening
+- Bounded globalState, transaction safety, fetch timeouts, retry caps
+- 15+ bug fixes across all services
+
+### 🔲 Notebooks & Spark Jobs
 - Fabric Notebooks support (runs, durations, statuses)
 - Spark Jobs support
 - Unified filters across pipelines, notebooks, and semantic models
 
-### 🔲 v1.3 — Run Analysis
+### 🔲 Run Analysis
 - Compare two runs of the same pipeline (parameters, durations, logs)
 - Configuration diff between executions
 
-### 🔲 v2.0 — Sharing & Cross-tenant
+### 🔲 Sharing & Cross-tenant
 - Static HTML report export (for client sharing)
 - "Pinned Items" cross-tenant panel: monitor favorites from multiple tenants in a single view
 

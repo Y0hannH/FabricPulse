@@ -66,6 +66,7 @@
 
     <div class="toolbar-right">
       <span id="last-refreshed" class="muted text-xs"></span>
+      <button id="btn-help" class="btn-help" title="Quick start guide">?</button>
       <button id="btn-refresh" class="btn btn-secondary" title="Refresh now">↺ Refresh</button>
       <button id="btn-add-tenant" class="btn btn-primary">+ Add Tenant</button>
     </div>
@@ -115,6 +116,75 @@
     </div>
 
   </main>
+
+  <!-- ── Help modal ── -->
+  <div id="help-overlay" class="modal-overlay hidden">
+    <div class="modal help-modal">
+      <div class="help-header">
+        <h3>⚡ FabricPulse — Quick Guide</h3>
+        <button id="btn-help-close" class="btn-help-close" title="Close">✕</button>
+      </div>
+
+      <div class="help-content">
+        <section>
+          <h4>Getting Started</h4>
+          <ul>
+            <li><strong>Add Tenant</strong> — click <kbd>+ Add Tenant</kbd> and enter your Azure tenant ID</li>
+            <li><strong>Favorites</strong> — click <kbd>☆</kbd> on a pipeline to pin it; favorites load first on startup</li>
+            <li><strong>Workspace filter</strong> — use the workspace picker to focus on one workspace, star or blacklist workspaces</li>
+          </ul>
+        </section>
+
+        <section>
+          <h4>Dashboard</h4>
+          <ul>
+            <li><strong>Search</strong> — filter by pipeline or workspace name</li>
+            <li><strong>Type pills</strong> — toggle between All, Pipeline, and Semantic Model</li>
+            <li><strong>Status pills</strong> — filter by Failed, Succeeded, Never run, In Progress (multi-select)</li>
+            <li><strong>Sort</strong> — click any column header to sort ascending/descending</li>
+          </ul>
+        </section>
+
+        <section>
+          <h4>Quick Actions</h4>
+          <p>Hover a row to reveal action buttons:</p>
+          <ul>
+            <li><kbd>↺</kbd> Refresh last run &nbsp; <kbd>⬇</kbd> Fetch full history &nbsp; <kbd>▶</kbd> Re-run pipeline</li>
+            <li><kbd>📋</kbd> Copy Run ID &nbsp; <kbd>🔗</kbd> Open in Fabric &nbsp; <kbd>📊</kbd> View history panel</li>
+          </ul>
+        </section>
+
+        <section>
+          <h4>History Panel</h4>
+          <ul>
+            <li><strong>Chart</strong> — duration over time with color-coded statuses</li>
+            <li><strong>Annotations</strong> — add notes on specific dates (click 📝 icon)</li>
+            <li><strong>Period</strong> — switch between 7d, 30d, 90d, or all</li>
+          </ul>
+        </section>
+
+        <section>
+          <h4>Alerts &amp; Patterns</h4>
+          <ul>
+            <li>Failure notifications appear automatically as VS Code alerts</li>
+            <li>Configure <strong>daily report time</strong> in settings (default 18:00)</li>
+            <li>Pattern detection warns if a pipeline fails repeatedly on the same day or time window</li>
+          </ul>
+        </section>
+
+        <section>
+          <h4>Settings</h4>
+          <p>Open VS Code settings and search <kbd>fabricPulse</kbd>:</p>
+          <ul>
+            <li><code>pollingInterval</code> — auto-refresh rate in seconds (default 60)</li>
+            <li><code>retentionDays</code> — days to keep history (default 90)</li>
+            <li><code>batchSize</code> / <code>batchDelayMs</code> — tune API batch loading</li>
+            <li><code>blacklistedWorkspaces</code> — exclude workspaces by name or ID</li>
+          </ul>
+        </section>
+      </div>
+    </div>
+  </div>
 
 </div>
 
