@@ -457,6 +457,10 @@ export class DashboardPanel {
       case 'exportHistory':
         if (!isUuid(msg.pipelineId)) return fail('bad pipelineId');
         break;
+
+      case 'setFavoritesOnly':
+        if (typeof msg.enabled !== 'boolean') return fail('bad enabled');
+        break;
     }
 
     return true;
