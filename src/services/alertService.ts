@@ -2,14 +2,44 @@ import * as vscode from 'vscode';
 import { StorageService } from './storageService';
 import { PipelineWithStatus } from '../models/types';
 
+/** Max number of alerted run IDs to keep in globalState. Old entries are
+ *  evicted FIFO once this limit is reached.  Prevents unbounded growth. */
+const MAX_ALERTED_RUNS = 500;
+const ALERTED_STATE_KEY = 'fabricPulse.alertedRunIds';
+
 export class AlertService {
   private dailyReportTimer?: ReturnType<typeof setInterval>;
   private lastDailyReportDate = '';
 
+  /** In-memory copy of alerted run IDs, synced to globalState. */
+  private _alertedIds: Set<string>;
+
   constructor(
     private readonly storage: StorageService,
     private readonly context: vscode.ExtensionContext,
-  ) {}
+  ) {
+    // Hydrate from persisted state
+    const persisted = context.globalState.get<string[]>(ALERTED_STATE_KEY, []);
+    this._alertedIds = new Set(persisted);
+  }
+
+  /** Returns true if this run was already alerted. */
+  private _wasAlerted(runId: string): boolean {
+    return this._alertedIds.has(runId);
+  }
+
+  /** Marks a run as alerted and persists the bounded set. */
+  private async _markAlerted(runId: string): Promise<void> {
+    this._alertedIds.add(runId);
+
+    // Evict oldest entries when the set exceeds the cap
+    if (this._alertedIds.size > MAX_ALERTED_RUNS) {
+      const ids = Array.from(this._alertedIds);
+      this._alertedIds = new Set(ids.slice(ids.length - MAX_ALERTED_RUNS));
+    }
+
+    await this.context.globalState.update(ALERTED_STATE_KEY, Array.from(this._alertedIds));
+  }
 
   // ─── Failure & duration alerts ───────────────────────────────────────────────
 
@@ -31,9 +61,7 @@ export class AlertService {
     status: string,
   ): Promise<void> {
     if (status !== 'Failed') return;
-
-    const stateKey = `fabricPulse.alerted.fail.${runId}`;
-    if (this.context.globalState.get<boolean>(stateKey)) return;
+    if (this._wasAlerted(runId)) return;
 
     const action = await vscode.window.showErrorMessage(
       `⚡ FabricPulse: "${pipeline.displayName}" failed in workspace "${pipeline.workspaceName}"`,
@@ -42,7 +70,7 @@ export class AlertService {
       'Dismiss',
     );
 
-    await this.context.globalState.update(stateKey, true);
+    await this._markAlerted(runId);
 
     if (action === 'Open Dashboard') {
       vscode.commands.executeCommand('fabricPulse.openDashboard');
@@ -58,9 +86,7 @@ export class AlertService {
   ): Promise<void> {
     if (!pipeline.durationThresholdMs || !durationMs) return;
     if (durationMs <= pipeline.durationThresholdMs) return;
-
-    const stateKey = `fabricPulse.alerted.duration.${runId}`;
-    if (this.context.globalState.get<boolean>(stateKey)) return;
+    if (this._wasAlerted(runId)) return;
 
     const actual = formatDuration(durationMs);
     const threshold = formatDuration(pipeline.durationThresholdMs);
@@ -71,7 +97,7 @@ export class AlertService {
       'Dismiss',
     );
 
-    await this.context.globalState.update(stateKey, true);
+    await this._markAlerted(runId);
   }
 
   // ─── Daily report ────────────────────────────────────────────────────────────
