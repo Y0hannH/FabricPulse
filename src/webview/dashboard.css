@@ -467,7 +467,32 @@ button { cursor: pointer; font-family: inherit; font-size: inherit; }
   border-bottom: 1px solid var(--fp-border);
   white-space:  nowrap;
   user-select:  none;
+  position:     relative;
 }
+
+/* ── Column resize handles ──────────────────────────────────────────────────── */
+.pipeline-table th:not(.col-star)::after {
+  content:    '';
+  position:   absolute;
+  right:      0;
+  top:        0;
+  bottom:     0;
+  width:      4px;
+  cursor:     col-resize;
+  background: transparent;
+}
+.pipeline-table th:not(.col-star):hover::after {
+  background: var(--vscode-focusBorder, #007fd4);
+  opacity: 0.5;
+}
+body.col-resizing .pipeline-table th::after {
+  background: var(--vscode-focusBorder, #007fd4);
+}
+body.col-resizing {
+  cursor: col-resize !important;
+  user-select: none;
+}
+body.col-resizing * { cursor: col-resize !important; }
 
 .pipeline-table th.sortable { cursor: pointer; }
 .pipeline-table th.sortable:hover { color: var(--vscode-foreground); }

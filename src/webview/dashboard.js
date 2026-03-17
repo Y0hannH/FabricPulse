@@ -89,6 +89,9 @@ function post(/** @type {any} */ msg) {
   vscode.postMessage(msg);
 }
 
+// ── Keep "Updated … · Next in …" ticking between polling cycles ─────────────
+setInterval(() => renderLastRefreshed(), 15_000);
+
 // ── Render ────────────────────────────────────────────────────────────────────
 function render() {
   renderLoadingBar();
@@ -378,6 +381,63 @@ document.querySelectorAll('.sortable').forEach(th => {
     renderTable();
   });
 });
+
+// ── Column resize ────────────────────────────────────────────────────────────
+{
+  const COL_MIN_W = 30;
+  const EDGE_ZONE = 6; // px from right edge to trigger resize
+
+  /** @param {MouseEvent} e */
+  function isOnRightEdge(e) {
+    const th = /** @type {HTMLElement} */ (e.target).closest('th');
+    if (!th || th.classList.contains('col-star')) return null;
+    const rect = th.getBoundingClientRect();
+    return (rect.right - e.clientX) <= EDGE_ZONE ? th : null;
+  }
+
+  const thead = document.querySelector('.pipeline-table thead');
+  if (thead) {
+    // Change cursor when hovering near the right edge
+    thead.addEventListener('mousemove', (e) => {
+      if (document.body.classList.contains('col-resizing')) return;
+      const th = isOnRightEdge(/** @type {MouseEvent} */ (e));
+      /** @type {HTMLElement} */ (thead).style.cursor = th ? 'col-resize' : '';
+    });
+
+    thead.addEventListener('mousedown', (e) => {
+      const th = isOnRightEdge(/** @type {MouseEvent} */ (e));
+      if (!th) return;
+
+      e.preventDefault();
+      const startX = /** @type {MouseEvent} */ (e).clientX;
+      const startW = th.offsetWidth;
+      document.body.classList.add('col-resizing');
+
+      /** @param {MouseEvent} ev */
+      function onMove(ev) {
+        const newW = Math.max(COL_MIN_W, startW + (ev.clientX - startX));
+        th.style.width = newW + 'px';
+      }
+
+      function onUp() {
+        document.body.classList.remove('col-resizing');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+
+    // Double-click on edge → reset to default width
+    thead.addEventListener('dblclick', (e) => {
+      const th = isOnRightEdge(/** @type {MouseEvent} */ (e));
+      if (th) {
+        th.style.width = '';
+      }
+    });
+  }
+}
 
 // ── Toolbar event listeners ───────────────────────────────────────────────────
 dom.tenantSelect.addEventListener('change', () => {
