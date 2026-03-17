@@ -2,6 +2,14 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
+## [1.2.2] - 2026-03-17
+
+### Added
+- **Resizable columns**: Drag column borders in the dashboard table to resize them; double-click a border to reset to default width
+
+### Fixed
+- **Status bar timer**: "Updated just now · Next in Xm" text now updates in real-time without requiring a manual refresh click
+
 ## [1.2.1] - 2026-03-11
 
 ### Added
