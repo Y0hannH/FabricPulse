@@ -425,7 +425,7 @@ export class DashboardPanel {
         break;
 
       case 'selectWorkspace':
-        if (!isUuid(msg.workspaceId)) return fail('bad workspaceId');
+        if (msg.workspaceId && !isUuid(msg.workspaceId)) return fail('bad workspaceId');
         break;
 
       case 'toggleWorkspaceFavorite':

@@ -2,6 +2,11 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
+## [1.2.3] - 2026-03-25
+
+### Fixed
+- **Workspace filter**: Selecting "All workspaces" after filtering by a specific workspace now works correctly (empty workspaceId was rejected by UUID validation)
+
 ## [1.2.2] - 2026-03-17
 
 ### Added
