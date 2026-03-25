@@ -28,7 +28,8 @@
       "Bash(node -e \":*)",
       "Bash(npm install --save-dev esbuild @typescript-eslint/eslint-plugin @typescript-eslint/parser eslint)",
       "Bash(npx vsce package)",
-      "Bash(npx @vscode/vsce package --no-dependencies)"
+      "Bash(npx @vscode/vsce package --no-dependencies)",
+      "WebSearch"
     ]
   }
 }
