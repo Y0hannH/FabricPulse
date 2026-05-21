@@ -86,6 +86,68 @@ export interface Favorite {
   itemType?: string; // 'pipeline' (default) | 'semanticModel'
 }
 
+// ─── Lakehouse models ────────────────────────────────────────────────────────
+
+export interface Lakehouse {
+  id: string;
+  displayName: string;
+  description?: string;
+  workspaceId: string;
+  workspaceName: string;
+  tenantId: string;
+  sqlEndpointId?: string;
+  connectionString?: string;
+  sqlEndpointStatus?: 'InProgress' | 'Success' | 'Failed';
+  isSchemaEnabled: boolean;
+  defaultSchema?: string;
+  isFavorite: boolean;
+  tableCount?: number; // cached after first expand
+}
+
+export interface LakehouseTable {
+  name: string;
+  type: 'Managed' | 'External';
+  format: string;
+  location: string;
+  schema?: string; // set for schema-enabled lakehouses (discovered via OneLake)
+  sizeBytes?: number; // on-disk footprint, computed on demand
+  lastMaintenanceAt?: string;
+  maintenanceStatus?: string;
+}
+
+export interface LakehouseState {
+  tenants: Tenant[];
+  currentTenantId: string;
+  workspaces: Workspace[];
+  lakehouses: Lakehouse[];
+  selectedWorkspaceId: string;
+  expandedLakehouseId: string;
+  tables: LakehouseTable[];
+  isLoading: boolean;
+  error?: string;
+}
+
+// Messages sent FROM lakehouse webview TO extension
+export type LakehouseToExtMsg =
+  | { type: 'ready' }
+  | { type: 'refresh' }
+  | { type: 'selectTenant'; tenantId: string }
+  | { type: 'selectWorkspace'; workspaceId: string }
+  | { type: 'toggleFavorite'; lakehouseId: string; workspaceId: string }
+  | { type: 'expandLakehouse'; lakehouseId: string; workspaceId: string }
+  | { type: 'collapseLakehouse' }
+  | { type: 'copyConnectionString'; connectionString: string }
+  | { type: 'runMaintenance'; lakehouseId: string; workspaceId: string; tableName: string;
+      schemaName?: string; vOrder: boolean; vacuum: boolean; vacuumRetention?: string }
+  | { type: 'computeTableSize'; lakehouseId: string; workspaceId: string; tableName: string; schemaName?: string }
+  | { type: 'openInFabric'; lakehouseId: string; workspaceId: string; tenantId: string };
+
+// Messages sent FROM extension TO lakehouse webview
+export type ExtToLakehouseMsg =
+  | { type: 'updateState'; state: LakehouseState }
+  | { type: 'sizeComputed'; tableName: string; schemaName?: string }
+  | { type: 'toast'; message: string; level: 'info' | 'success' | 'error' | 'warning' };
+
 // ─── Pattern detection ────────────────────────────────────────────────────────
 
 export interface PatternWarning {

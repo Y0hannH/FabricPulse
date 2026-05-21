@@ -1,9 +1,10 @@
 import fetch from 'node-fetch';
-import { AuthService, POWERBI_SCOPE } from './authService';
-import { Workspace, Pipeline, PipelineRun, RunStatus } from '../models/types';
+import { AuthService, POWERBI_SCOPE, ONELAKE_SCOPE } from './authService';
+import { Workspace, Pipeline, PipelineRun, RunStatus, Lakehouse, LakehouseTable } from '../models/types';
 
 const BASE_URL = 'https://api.fabric.microsoft.com/v1';
 const POWERBI_BASE_URL = 'https://api.powerbi.com/v1.0/myorg';
+const ONELAKE_BASE = 'https://onelake.dfs.fabric.microsoft.com';
 const MAX_RETRIES = 3;
 const FETCH_TIMEOUT_MS = 30_000;        // 30 s per request — prevents indefinite hangs
 const MAX_RETRY_WAIT_MS = 60_000;       // never wait more than 60 s regardless of Retry-After header
@@ -153,7 +154,9 @@ export class FabricApiService {
       if (response.status === 401) {
         this.auth.clearCredential(tenantId);
       }
-      throw new Error(`Fabric API error ${response.status} on ${path.split('?')[0]}`);
+      let detail = '';
+      try { const err = await response.json() as { message?: string; errorCode?: string }; detail = err.message ?? err.errorCode ?? ''; } catch { /* ignore */ }
+      throw new Error(`Fabric API error ${response.status} on ${path.split('?')[0]}${detail ? `: ${detail}` : ''}`);
     }
 
     return response.json() as Promise<T>;
@@ -506,6 +509,311 @@ export class FabricApiService {
     } catch {
       return 'triggered';
     }
+  }
+
+  // ─── Lakehouse API ──────────────────────────────────────────────────────────
+
+  async getLakehouses(tenantId: string, workspaceId: string): Promise<Lakehouse[]> {
+    assertUuids(workspaceId);
+    interface FabricLakehouse {
+      id: string;
+      displayName: string;
+      description?: string;
+      properties?: {
+        defaultSchema?: string;
+        sqlEndpointProperties?: {
+          id?: string;
+          connectionString?: string;
+          provisioningStatus?: string;
+        };
+      };
+    }
+    const items = await this.listAll<FabricLakehouse>(tenantId, `/workspaces/${workspaceId}/lakehouses`);
+    return items.map(lh => ({
+      id: lh.id,
+      displayName: lh.displayName,
+      description: lh.description,
+      workspaceId,
+      workspaceName: '',
+      tenantId,
+      sqlEndpointId: lh.properties?.sqlEndpointProperties?.id,
+      connectionString: lh.properties?.sqlEndpointProperties?.connectionString,
+      sqlEndpointStatus: (lh.properties?.sqlEndpointProperties?.provisioningStatus as Lakehouse['sqlEndpointStatus']) ?? undefined,
+      isSchemaEnabled: !!lh.properties?.defaultSchema,
+      defaultSchema: lh.properties?.defaultSchema,
+      isFavorite: false,
+    }));
+  }
+
+  async getLakehouseTables(tenantId: string, workspaceId: string, lakehouseId: string): Promise<LakehouseTable[]> {
+    assertUuids(workspaceId, lakehouseId);
+    interface FabricTable {
+      name: string;
+      type: string;
+      format: string;
+      location: string;
+    }
+    // The List Tables API uses a different response shape: { data: [], continuationToken }
+    // instead of the standard { value: [], continuationUri } used by other Fabric APIs.
+    interface TablesResponse {
+      data: FabricTable[];
+      continuationToken?: string;
+    }
+
+    const results: FabricTable[] = [];
+    const basePath = `/workspaces/${workspaceId}/lakehouses/${lakehouseId}/tables`;
+    let continuationToken: string | undefined;
+    let pages = 0;
+
+    do {
+      const qs = continuationToken
+        ? `?continuationToken=${encodeURIComponent(continuationToken)}&maxResults=100`
+        : '?maxResults=100';
+      const data = await this.request<TablesResponse>(tenantId, `${basePath}${qs}`);
+      results.push(...(data.data ?? []));
+      continuationToken = data.continuationToken;
+      pages++;
+    } while (continuationToken && pages < 20);
+
+    return results.map(t => ({
+      name: t.name,
+      type: (t.type === 'External' ? 'External' : 'Managed') as LakehouseTable['type'],
+      format: t.format,
+      location: t.location,
+    }));
+  }
+
+  /** Lists the immediate child paths of a OneLake directory via the ADLS Gen2
+   *  DFS API. Used to enumerate schemas/tables in schema-enabled lakehouses,
+   *  which the Fabric "List Tables" API does not support. */
+  private async listOneLakePaths(
+    tenantId: string,
+    workspaceId: string,
+    directory: string,
+    recursive = false,
+  ): Promise<{ name: string; isDirectory: boolean; contentLength: number }[]> {
+    const token = await this.auth.getToken(tenantId, ONELAKE_SCOPE);
+    const results: { name: string; isDirectory: boolean; contentLength: number }[] = [];
+    let continuation: string | undefined;
+    let pages = 0;
+
+    do {
+      let url = `${ONELAKE_BASE}/${workspaceId}?resource=filesystem&recursive=${recursive}&directory=${directory}`;
+      if (continuation) url += `&continuation=${encodeURIComponent(continuation)}`;
+
+      const response = await fetchWithRetry(
+        () => fetch(url, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${token}` },
+          timeout: FETCH_TIMEOUT_MS,
+        }),
+        'onelake list paths',
+      );
+
+      // 404 — the Tables folder (or schema) does not exist yet: treat as empty
+      if (response.status === 404) return results;
+
+      if (!response.ok) {
+        if (response.status === 401) this.auth.clearCredential(tenantId);
+        let detail = '';
+        try { const err = await response.json() as { error?: { message?: string } }; detail = err.error?.message ?? ''; } catch { /* ignore */ }
+        throw new Error(`OneLake API error ${response.status} listing tables${detail ? `: ${detail}` : ''}`);
+      }
+
+      const data = await response.json() as {
+        paths?: { name: string; isDirectory?: string; contentLength?: string }[];
+      };
+      for (const p of data.paths ?? []) {
+        results.push({
+          name: p.name,
+          isDirectory: p.isDirectory === 'true',
+          contentLength: Number(p.contentLength) || 0,
+        });
+      }
+      continuation = response.headers.get('x-ms-continuation') || undefined;
+      pages++;
+    } while (continuation && pages < 50);
+
+    return results;
+  }
+
+  /** Lists tables in a schema-enabled lakehouse by walking the OneLake directory
+   *  structure (Tables/{schema}/{table}). The Fabric "List Tables" API does not
+   *  support schema-enabled lakehouses. */
+  async getSchemaLakehouseTables(
+    tenantId: string,
+    workspaceId: string,
+    lakehouseId: string,
+  ): Promise<LakehouseTable[]> {
+    assertUuids(workspaceId, lakehouseId);
+    const baseName = (p: string) => p.split('/').filter(Boolean).pop() ?? p;
+
+    const schemaDirs = await this.listOneLakePaths(tenantId, workspaceId, `${lakehouseId}/Tables`);
+    const schemas = schemaDirs.filter(d => d.isDirectory).map(d => baseName(d.name));
+
+    const tables: LakehouseTable[] = [];
+    for (const schema of schemas) {
+      const tableDirs = await this.listOneLakePaths(
+        tenantId, workspaceId, `${lakehouseId}/Tables/${encodeURIComponent(schema)}`,
+      );
+      for (const d of tableDirs) {
+        if (!d.isDirectory) continue;
+        tables.push({
+          name: baseName(d.name),
+          schema,
+          type: 'Managed',
+          format: 'delta',
+          location: `${ONELAKE_BASE}/${workspaceId}/${d.name}`,
+        });
+      }
+    }
+
+    tables.sort((a, b) =>
+      (a.schema ?? '').localeCompare(b.schema ?? '') || a.name.localeCompare(b.name));
+    return tables;
+  }
+
+  /** Computes the on-disk size of a lakehouse table by recursively summing the
+   *  byte length of every file under its OneLake directory. This is the storage
+   *  footprint (includes Delta file versions not yet vacuumed), not the logical
+   *  table size. */
+  async getTableSize(
+    tenantId: string,
+    workspaceId: string,
+    lakehouseId: string,
+    tableName: string,
+    schema?: string,
+  ): Promise<number> {
+    assertUuids(workspaceId, lakehouseId);
+    const directory = schema
+      ? `${lakehouseId}/Tables/${encodeURIComponent(schema)}/${encodeURIComponent(tableName)}`
+      : `${lakehouseId}/Tables/${encodeURIComponent(tableName)}`;
+    const paths = await this.listOneLakePaths(tenantId, workspaceId, directory, true);
+    return paths.reduce((sum, p) => sum + (p.isDirectory ? 0 : p.contentLength), 0);
+  }
+
+  /** Trigger table maintenance on a specific table.
+   *  POST returns 202 Accepted with a Location header for polling.
+   *  Returns the operation ID or 'triggered'. */
+  async triggerTableMaintenance(
+    tenantId: string,
+    workspaceId: string,
+    lakehouseId: string,
+    tableName: string,
+    options?: {
+      schemaName?: string;
+      vOrder?: boolean;
+      vacuum?: boolean;
+      vacuumRetention?: string; // format: "d:hh:mm:ss"
+    },
+  ): Promise<{ jobInstanceId?: string; locationUrl?: string }> {
+    assertUuids(workspaceId, lakehouseId);
+    // Table/schema names go only into the JSON body (JSON.stringify handles
+    // escaping, they never touch the URL) — just reject empty, over-long or
+    // control-character values rather than restricting to SQL identifiers.
+    const isValidName = (s: string): boolean => {
+      if (s.length < 1 || s.length > 256) return false;
+      for (let i = 0; i < s.length; i++) {
+        if (s.charCodeAt(i) < 0x20) return false; // reject control characters
+      }
+      return true;
+    };
+    if (!isValidName(tableName)) {
+      throw new Error(`Invalid table name: ${tableName}`);
+    }
+    if (options?.schemaName && !isValidName(options.schemaName)) {
+      throw new Error(`Invalid schema name: ${options.schemaName}`);
+    }
+
+    const token = await this.auth.getToken(tenantId);
+    const path = `/workspaces/${workspaceId}/items/${lakehouseId}/jobs/TableMaintenance/instances`;
+    const url = `${BASE_URL}${path}`;
+
+    // Build execution data based on user choices
+    const executionData: Record<string, unknown> = { tableName };
+    if (options?.schemaName) {
+      executionData.schemaName = options.schemaName;
+    }
+
+    // Optimize (bin-compaction + optional V-Order)
+    const vOrder = options?.vOrder ?? true;
+    executionData.optimizeSettings = { vOrder };
+
+    // Vacuum (optional)
+    if (options?.vacuum) {
+      const vacuumSettings: Record<string, string> = {};
+      if (options.vacuumRetention) {
+        vacuumSettings.retentionPeriod = options.vacuumRetention;
+      }
+      executionData.vacuumSettings = vacuumSettings;
+    }
+
+    const body = JSON.stringify({ executionData });
+
+    const response = await fetchWithRetry(
+      () => fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body,
+        timeout: FETCH_TIMEOUT_MS,
+      }),
+      path,
+    );
+
+    if (!response.ok) {
+      if (response.status === 401) this.auth.clearCredential(tenantId);
+      let detail = '';
+      try { const err = await response.json() as { message?: string; errorCode?: string }; detail = err.message ?? err.errorCode ?? ''; } catch { /* ignore */ }
+      throw new Error(`Fabric API error ${response.status} on table maintenance for "${tableName}"${detail ? `: ${detail}` : ''}`);
+    }
+
+    // 202 Accepted — Location header contains the polling URL
+    const locationUrl = response.headers.get('Location') ?? undefined;
+
+    let jobInstanceId: string | undefined;
+    try {
+      const text = await response.text();
+      if (text) {
+        const result = JSON.parse(text) as { id?: string };
+        jobInstanceId = result.id;
+      }
+    } catch { /* 202 may have empty body */ }
+
+    // Fall back to the jobInstanceId embedded in the Location URL
+    if (!jobInstanceId && locationUrl) {
+      const match = locationUrl.match(/instances\/([0-9a-f-]{36})/i);
+      if (match) jobInstanceId = match[1];
+    }
+
+    return { jobInstanceId, locationUrl };
+  }
+
+  /** Poll a job instance status.
+   *  GET /workspaces/{wsId}/items/{itemId}/jobs/instances/{jobInstanceId} */
+  async getJobInstance(
+    tenantId: string,
+    workspaceId: string,
+    itemId: string,
+    jobInstanceId: string,
+  ): Promise<{ status: string; startTimeUtc?: string; endTimeUtc?: string; failureReason?: string }> {
+    assertUuids(workspaceId, itemId, jobInstanceId);
+    const path = `/workspaces/${workspaceId}/items/${itemId}/jobs/instances/${jobInstanceId}`;
+    const data = await this.request<{
+      status: string;
+      startTimeUtc?: string;
+      endTimeUtc?: string;
+      failureReason?: { message?: string; errorCode?: string } | null;
+    }>(tenantId, path);
+
+    return {
+      status: data.status,
+      startTimeUtc: data.startTimeUtc,
+      endTimeUtc: data.endTimeUtc,
+      failureReason: data.failureReason?.message ?? data.failureReason?.errorCode,
+    };
   }
 
   // ─── Status normalization ─────────────────────────────────────────────────

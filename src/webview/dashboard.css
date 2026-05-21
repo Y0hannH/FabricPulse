@@ -516,17 +516,122 @@ body.col-resizing * { cursor: col-resize !important; }
 }
 
 /* ── Column widths ───────────────────────────────────────────────────────────── */
-.col-star      { width: 28px;  text-align: center; }
-.col-type      { width: 64px;  text-align: center; }
-.col-name      { width: 26%;   }
-.col-workspace { width: 18%;   }
-.col-status    { width: 16%;   }
-.col-duration  { width: 72px;  text-align: right; }
-.col-dur-avg   { width: 62px;  text-align: right; color: var(--vscode-descriptionForeground); }
-.col-dur-min   { width: 62px;  text-align: right; color: var(--vscode-descriptionForeground); }
-.col-dur-max   { width: 62px;  text-align: right; color: var(--vscode-descriptionForeground); }
-.col-rate      { width: 68px;  text-align: right; }
-.col-runs      { width: 56px;  text-align: right; color: var(--vscode-descriptionForeground); }
+.col-star         { width: 28px;  text-align: center; }
+.col-type         { width: 64px;  text-align: center; }
+.col-name         { width: 26%;   }
+.col-workspace    { width: 18%;   }
+.col-status       { width: 16%;   }
+.col-duration     { width: 72px;  text-align: right; }
+.col-dur-avg      { width: 62px;  text-align: right; color: var(--vscode-descriptionForeground); }
+.col-dur-min      { width: 62px;  text-align: right; color: var(--vscode-descriptionForeground); }
+.col-dur-max      { width: 62px;  text-align: right; color: var(--vscode-descriptionForeground); }
+.col-rate         { width: 68px;  text-align: right; }
+.col-runs         { width: 56px;  text-align: right; color: var(--vscode-descriptionForeground); }
+
+/* ── Lakehouse-specific columns ─────────────────────────────────────────────── */
+.col-sql-status   { width: 110px; }
+.col-tables-count { width: 116px; }
+.col-actions-lh   { width: 80px;  }
+
+/* ── Tables expand/collapse pill ────────────────────────────────────────────── */
+.tables-toggle {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           5px;
+  background:    var(--fp-bg-alt);
+  border:        1px solid var(--vscode-widget-border, #3c3c3c);
+  color:         var(--vscode-foreground);
+  padding:       3px 9px;
+  border-radius: 11px;
+  font-size:     11px;
+  line-height:   1;
+  cursor:        pointer;
+  white-space:   nowrap;
+  transition:    background 0.1s, border-color 0.1s;
+}
+.tables-toggle:hover:not(.disabled) {
+  background:    var(--vscode-list-hoverBackground, #2a2d2e);
+  border-color:  var(--vscode-focusBorder, #007fd4);
+}
+.tables-toggle-chevron {
+  font-size: 9px;
+  color:     var(--vscode-descriptionForeground, #888);
+}
+.row-expanded .tables-toggle {
+  border-color: var(--vscode-focusBorder, #007fd4);
+  background:   var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.col-tbl-name     { width: 28%; }
+.col-tbl-type     { width: 80px; }
+.col-tbl-format   { width: 80px; }
+.col-tbl-size     { width: 84px;  text-align: right; }
+.col-tbl-maint    { width: 180px; }
+.col-tbl-actions  { width: 60px; }
+
+/* Computed table size — rendered as a button so it can be recomputed */
+.size-btn {
+  background:    none;
+  border:        none;
+  color:         var(--vscode-foreground);
+  cursor:        pointer;
+  padding:       1px 4px;
+  border-radius: 3px;
+  font:          inherit;
+}
+.size-btn:hover {
+  background:       var(--fp-bg-alt);
+  text-decoration:  underline;
+}
+
+/* The lakehouse tables don't support column resizing — hide the drag affordance */
+#lakehouse-table th::after,
+#tables-table th::after { display: none; }
+
+.row-expanded {
+  background: rgba(77,156,230,0.06) !important;
+  border-left: 2px solid var(--fp-blue);
+}
+
+/* ── Tables splitter (draggable resize handle) ─────────────────────────────── */
+.tables-splitter {
+  height:      5px;
+  background:  var(--fp-border);
+  cursor:      row-resize;
+  flex-shrink: 0;
+  position:    relative;
+  z-index:     20;
+  transition:  background 0.15s;
+}
+.tables-splitter:hover,
+.tables-splitter.active {
+  background: var(--fp-blue);
+}
+
+/* ── Tables detail panel ────────────────────────────────────────────────────── */
+.tables-panel {
+  border-top:  none;
+  background:  var(--vscode-editor-background);
+  min-height:  120px;
+  overflow:    auto;
+  flex-shrink: 0;
+}
+.tables-header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  padding:         8px 12px;
+  background:      var(--vscode-sideBar-background);
+  border-bottom:   1px solid var(--fp-border);
+  position:        sticky;
+  top:             0;
+  z-index:         5;
+}
+.tables-header h3 {
+  font-size:   13px;
+  font-weight: 600;
+  color:       var(--fp-blue);
+}
 
 /* ── Star button ─────────────────────────────────────────────────────────────── */
 .star-btn {
@@ -825,6 +930,30 @@ body.col-resizing * { cursor: col-resize !important; }
 }
 .modal textarea { height: 70px; resize: vertical; }
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+
+/* Maintenance modal options */
+.maint-option {
+  display:        flex;
+  flex-direction: column;
+  gap:            2px;
+  margin-bottom:  10px;
+}
+.maint-check-label {
+  display:     flex !important;
+  align-items: center;
+  gap:         6px;
+  cursor:      pointer;
+  font-size:   12px !important;
+  color:       var(--vscode-foreground) !important;
+  margin-bottom: 0 !important;
+}
+.maint-check-label input[type="checkbox"] {
+  width:         auto;
+  margin:        0;
+  margin-bottom: 0;
+  flex-shrink:   0;
+}
+.maint-option .muted { margin-left: 22px; }
 
 /* ── Export bar ──────────────────────────────────────────────────────────────── */
 .export-bar {

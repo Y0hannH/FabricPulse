@@ -2,6 +2,43 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
+## [1.4.1] - 2026-05-21
+
+### Fixed
+- **Table size recompute**: The size cell is now a button — clicking a computed size recomputes it (e.g. after a Vacuum), instead of being a static value
+- **Expand race condition**: Rapidly expanding different lakehouses could display one lakehouse's tables under another; the stale result is now discarded
+- **Maintenance polling**: A background maintenance job now polls with the tenant captured at trigger time, so switching the active tenant mid-job no longer breaks status tracking
+- **Table name validation**: Maintenance no longer rejects valid table names that start with a digit or contain hyphens (the previous check was overly strict)
+
+### Changed
+- Removed verbose debug logging from the table-maintenance request path
+- Computed table sizes are cached for the session and survive a refresh or collapse/expand
+- Removed duplicate toast notifications on maintenance trigger and connection-string copy
+
+## [1.4.0] - 2026-05-21
+
+### Added
+- **Schema-enabled lakehouse tables**: Tables in schema-enabled lakehouses are now listed by walking the OneLake directory structure (the Fabric "List Tables" API does not support them); they can be expanded like any other lakehouse
+- **Table size**: New "Size" column with an on-demand button that computes a table's on-disk footprint by recursively summing its OneLake file sizes
+
+### Changed
+- **Tables column**: The expand control is now a labelled pill button (`▸ N tables`) instead of a small arrow, making it easier to discover
+
+## [1.3.0] - 2026-05-21
+
+### Added
+- **Lakehouse panel**: New "Open Lakehouses" command — browse Microsoft Fabric lakehouses across workspaces, with tenant and workspace filters, text search, and favorites
+- **Table browser**: Expand a lakehouse to list its Delta tables (Managed/External, format, last maintenance) in a resizable detail panel
+- **Table maintenance**: Trigger Optimize (bin-compaction + V-Order) and Vacuum jobs on tables directly from the panel; job status is polled in the background and surfaced per table
+- **Schema-enabled lakehouses**: Manual maintenance dialog (schema + table name) for schema-enabled lakehouses, where the Fabric List Tables API is unavailable
+- **SQL endpoint**: Connection string copy and provisioning status shown per lakehouse
+
+### Fixed
+- **Maintenance timestamp**: Maintenance run times are stored as ISO 8601 UTC, fixing a timezone offset that displayed a just-triggered job as hours old
+
+### Changed
+- **API errors**: Fabric API error messages now include the server-provided detail message when available
+
 ## [1.2.3] - 2026-03-25
 
 ### Fixed

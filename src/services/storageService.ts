@@ -184,6 +184,23 @@ export class StorageService {
       CREATE TABLE IF NOT EXISTS schema_version (
         version INTEGER NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS lakehouse_favorites (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        tenant_id     TEXT NOT NULL,
+        workspace_id  TEXT NOT NULL,
+        lakehouse_id  TEXT NOT NULL,
+        UNIQUE(lakehouse_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS lakehouse_maintenance (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        lakehouse_id  TEXT NOT NULL,
+        table_name    TEXT NOT NULL,
+        triggered_at  TEXT NOT NULL DEFAULT (datetime('now')),
+        status        TEXT,
+        UNIQUE(lakehouse_id, table_name)
+      );
     `);
   }
 
@@ -422,6 +439,74 @@ export class StorageService {
   removeWorkspaceFavorite(workspaceId: string): void {
     this.db.run('DELETE FROM workspace_favorites WHERE workspace_id = ?', [workspaceId]);
     this._flush();
+  }
+
+  // ─── lakehouse_favorites ────────────────────────────────────────────────
+
+  isLakehouseFavorite(lakehouseId: string): boolean {
+    const result = this.db.exec('SELECT id FROM lakehouse_favorites WHERE lakehouse_id = ?', [lakehouseId]);
+    return (result[0]?.values?.length ?? 0) > 0;
+  }
+
+  addLakehouseFavorite(tenantId: string, workspaceId: string, lakehouseId: string): void {
+    this.db.run(
+      'INSERT OR IGNORE INTO lakehouse_favorites (tenant_id, workspace_id, lakehouse_id) VALUES (?,?,?)',
+      [tenantId, workspaceId, lakehouseId],
+    );
+    this._flush();
+  }
+
+  removeLakehouseFavorite(lakehouseId: string): void {
+    this.db.run('DELETE FROM lakehouse_favorites WHERE lakehouse_id = ?', [lakehouseId]);
+    this._flush();
+  }
+
+  getLakehouseFavorites(): { tenantId: string; workspaceId: string; lakehouseId: string }[] {
+    const result = this.db.exec('SELECT tenant_id, workspace_id, lakehouse_id FROM lakehouse_favorites');
+    return this._rows(result).map(r => ({
+      tenantId: r['tenant_id'] as string,
+      workspaceId: r['workspace_id'] as string,
+      lakehouseId: r['lakehouse_id'] as string,
+    }));
+  }
+
+  // ─── lakehouse_maintenance ─────────────────────────────────────────────
+
+  upsertMaintenance(lakehouseId: string, tableName: string, status?: string): void {
+    this.db.run(
+      `INSERT OR REPLACE INTO lakehouse_maintenance (lakehouse_id, table_name, triggered_at, status)
+       VALUES (?, ?, ?, ?)`,
+      [lakehouseId, tableName, new Date().toISOString(), status ?? 'Triggered'],
+    );
+    this._flush();
+  }
+
+  getLastMaintenance(lakehouseId: string, tableName: string): { triggeredAt: string; status: string } | undefined {
+    const result = this.db.exec(
+      'SELECT triggered_at, status FROM lakehouse_maintenance WHERE lakehouse_id = ? AND table_name = ? LIMIT 1',
+      [lakehouseId, tableName],
+    );
+    const rows = this._rows(result);
+    if (!rows.length) return undefined;
+    return {
+      triggeredAt: rows[0]['triggered_at'] as string,
+      status: (rows[0]['status'] as string) ?? '',
+    };
+  }
+
+  getAllMaintenances(lakehouseId: string): Map<string, { triggeredAt: string; status: string }> {
+    const result = this.db.exec(
+      'SELECT table_name, triggered_at, status FROM lakehouse_maintenance WHERE lakehouse_id = ?',
+      [lakehouseId],
+    );
+    const map = new Map<string, { triggeredAt: string; status: string }>();
+    for (const r of this._rows(result)) {
+      map.set(r['table_name'] as string, {
+        triggeredAt: r['triggered_at'] as string,
+        status: (r['status'] as string) ?? '',
+      });
+    }
+    return map;
   }
 
   // ─── annotations ─────────────────────────────────────────────────────────

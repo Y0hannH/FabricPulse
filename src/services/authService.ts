@@ -2,6 +2,8 @@ import { AzureCliCredential, InteractiveBrowserCredential, TokenCredential } fro
 
 export const FABRIC_SCOPE  = 'https://api.fabric.microsoft.com/.default';
 export const POWERBI_SCOPE = 'https://analysis.windows.net/powerbi/api/.default';
+/** OneLake DFS (ADLS Gen2) requires a token in the Storage audience. */
+export const ONELAKE_SCOPE = 'https://storage.azure.com/.default';
 
 interface CachedToken {
   token: string;
