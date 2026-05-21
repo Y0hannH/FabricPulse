@@ -2,6 +2,11 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
+## [1.4.2] - 2026-05-21
+
+### Changed
+- **Sign-in page**: The browser tab shown after an interactive Microsoft sign-in now displays a styled FabricPulse page (distinct success and error states) instead of plain text
+
 ## [1.4.1] - 2026-05-21
 
 ### Fixed

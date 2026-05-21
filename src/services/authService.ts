@@ -5,6 +5,70 @@ export const POWERBI_SCOPE = 'https://analysis.windows.net/powerbi/api/.default'
 /** OneLake DFS (ADLS Gen2) requires a token in the Storage audience. */
 export const ONELAKE_SCOPE = 'https://storage.azure.com/.default';
 
+/** Page shown in the browser tab once the interactive sign-in completes.
+ *  MSAL writes this verbatim as the response body; browsers content-sniff the
+ *  leading <!DOCTYPE html> and render it. */
+function authResultPage(opts: {
+  accent: string; glyph: string; title: string; message: string;
+}): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FabricPulse</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #1e1e1e; color: #e4e4e4;
+    display: flex; align-items: center; justify-content: center; min-height: 100vh;
+  }
+  .card {
+    background: #252526; border: 1px solid #3c3c3c; border-radius: 12px;
+    padding: 44px 52px; text-align: center; max-width: 440px;
+  }
+  .icon {
+    width: 60px; height: 60px; margin: 0 auto 22px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 32px; line-height: 1;
+    background: ${opts.accent}26; color: ${opts.accent};
+  }
+  h1 { font-size: 19px; font-weight: 600; margin-bottom: 10px; }
+  p { font-size: 13.5px; color: #9d9d9d; line-height: 1.55; }
+  .brand {
+    margin-top: 26px; font-size: 12px; color: #6e6e6e;
+    letter-spacing: .6px; text-transform: uppercase;
+  }
+  .brand a { color: inherit; text-decoration: none; }
+  .brand a:hover { color: #9d9d9d; text-decoration: underline; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">${opts.glyph}</div>
+    <h1>${opts.title}</h1>
+    <p>${opts.message}</p>
+    <div class="brand">⚡ FabricPulse · <a href="https://evolve-data.fr" target="_blank" rel="noopener noreferrer">evolve-data.fr</a></div>
+  </div>
+</body>
+</html>`;
+}
+
+const AUTH_SUCCESS_HTML = authResultPage({
+  accent: '#3fb950',
+  glyph: '✓',
+  title: 'Authentication successful',
+  message: "You're signed in to Microsoft Fabric. You can close this tab and return to VS Code.",
+});
+
+const AUTH_ERROR_HTML = authResultPage({
+  accent: '#f85149',
+  glyph: '✕',
+  title: 'Authentication failed',
+  message: 'Something went wrong during sign-in. Close this tab and try again from VS Code.',
+});
+
 interface CachedToken {
   token: string;
   expiresAt: number; // unix ms
@@ -73,6 +137,10 @@ export class AuthService {
     const browserCredential = new InteractiveBrowserCredential({
       tenantId,
       redirectUri: 'http://localhost:8765',
+      browserCustomizationOptions: {
+        successMessage: AUTH_SUCCESS_HTML,
+        errorMessage: AUTH_ERROR_HTML,
+      },
     });
     this.credentials.set(tenantId, browserCredential);
     return browserCredential;
