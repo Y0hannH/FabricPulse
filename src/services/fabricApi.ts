@@ -1,6 +1,6 @@
 import fetch from 'node-fetch';
 import { AuthService, POWERBI_SCOPE } from './authService';
-import { Workspace, Pipeline, PipelineRun, RunStatus } from '../models/types';
+import { Workspace, Pipeline, PipelineRun, RunStatus, Lakehouse, LakehouseTable } from '../models/types';
 
 const BASE_URL = 'https://api.fabric.microsoft.com/v1';
 const POWERBI_BASE_URL = 'https://api.powerbi.com/v1.0/myorg';
@@ -153,7 +153,9 @@ export class FabricApiService {
       if (response.status === 401) {
         this.auth.clearCredential(tenantId);
       }
-      throw new Error(`Fabric API error ${response.status} on ${path.split('?')[0]}`);
+      let detail = '';
+      try { const err = await response.json() as { message?: string; errorCode?: string }; detail = err.message ?? err.errorCode ?? ''; } catch { /* ignore */ }
+      throw new Error(`Fabric API error ${response.status} on ${path.split('?')[0]}${detail ? `: ${detail}` : ''}`);
     }
 
     return response.json() as Promise<T>;
@@ -506,6 +508,202 @@ export class FabricApiService {
     } catch {
       return 'triggered';
     }
+  }
+
+  // ─── Lakehouse API ──────────────────────────────────────────────────────────
+
+  async getLakehouses(tenantId: string, workspaceId: string): Promise<Lakehouse[]> {
+    assertUuids(workspaceId);
+    interface FabricLakehouse {
+      id: string;
+      displayName: string;
+      description?: string;
+      properties?: {
+        defaultSchema?: string;
+        sqlEndpointProperties?: {
+          id?: string;
+          connectionString?: string;
+          provisioningStatus?: string;
+        };
+      };
+    }
+    const items = await this.listAll<FabricLakehouse>(tenantId, `/workspaces/${workspaceId}/lakehouses`);
+    return items.map(lh => ({
+      id: lh.id,
+      displayName: lh.displayName,
+      description: lh.description,
+      workspaceId,
+      workspaceName: '',
+      tenantId,
+      sqlEndpointId: lh.properties?.sqlEndpointProperties?.id,
+      connectionString: lh.properties?.sqlEndpointProperties?.connectionString,
+      sqlEndpointStatus: (lh.properties?.sqlEndpointProperties?.provisioningStatus as Lakehouse['sqlEndpointStatus']) ?? undefined,
+      isSchemaEnabled: !!lh.properties?.defaultSchema,
+      defaultSchema: lh.properties?.defaultSchema,
+      isFavorite: false,
+    }));
+  }
+
+  async getLakehouseTables(tenantId: string, workspaceId: string, lakehouseId: string): Promise<LakehouseTable[]> {
+    assertUuids(workspaceId, lakehouseId);
+    interface FabricTable {
+      name: string;
+      type: string;
+      format: string;
+      location: string;
+    }
+    // The List Tables API uses a different response shape: { data: [], continuationToken }
+    // instead of the standard { value: [], continuationUri } used by other Fabric APIs.
+    interface TablesResponse {
+      data: FabricTable[];
+      continuationToken?: string;
+    }
+
+    const results: FabricTable[] = [];
+    const basePath = `/workspaces/${workspaceId}/lakehouses/${lakehouseId}/tables`;
+    let continuationToken: string | undefined;
+    let pages = 0;
+
+    do {
+      const qs = continuationToken
+        ? `?continuationToken=${encodeURIComponent(continuationToken)}&maxResults=100`
+        : '?maxResults=100';
+      const data = await this.request<TablesResponse>(tenantId, `${basePath}${qs}`);
+      results.push(...(data.data ?? []));
+      continuationToken = data.continuationToken;
+      pages++;
+    } while (continuationToken && pages < 20);
+
+    return results.map(t => ({
+      name: t.name,
+      type: (t.type === 'External' ? 'External' : 'Managed') as LakehouseTable['type'],
+      format: t.format,
+      location: t.location,
+    }));
+  }
+
+  /** Trigger table maintenance on a specific table.
+   *  POST returns 202 Accepted with a Location header for polling.
+   *  Returns the operation ID or 'triggered'. */
+  async triggerTableMaintenance(
+    tenantId: string,
+    workspaceId: string,
+    lakehouseId: string,
+    tableName: string,
+    options?: {
+      schemaName?: string;
+      vOrder?: boolean;
+      vacuum?: boolean;
+      vacuumRetention?: string; // format: "d:hh:mm:ss"
+    },
+  ): Promise<{ jobInstanceId?: string; locationUrl?: string }> {
+    assertUuids(workspaceId, lakehouseId);
+    // Validate table name: allow alphanumeric + underscores only (prevent injection)
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]{0,255}$/.test(tableName)) {
+      throw new Error(`Invalid table name: ${tableName}`);
+    }
+    if (options?.schemaName && !/^[a-zA-Z_][a-zA-Z0-9_]{0,127}$/.test(options.schemaName)) {
+      throw new Error(`Invalid schema name: ${options.schemaName}`);
+    }
+
+    const token = await this.auth.getToken(tenantId);
+    const path = `/workspaces/${workspaceId}/items/${lakehouseId}/jobs/TableMaintenance/instances`;
+    const url = `${BASE_URL}${path}`;
+
+    // Build execution data based on user choices
+    const executionData: Record<string, unknown> = { tableName };
+    if (options?.schemaName) {
+      executionData.schemaName = options.schemaName;
+    }
+
+    // Optimize (bin-compaction + optional V-Order)
+    const vOrder = options?.vOrder ?? true;
+    executionData.optimizeSettings = { vOrder };
+
+    // Vacuum (optional)
+    if (options?.vacuum) {
+      const vacuumSettings: Record<string, string> = {};
+      if (options.vacuumRetention) {
+        vacuumSettings.retentionPeriod = options.vacuumRetention;
+      }
+      executionData.vacuumSettings = vacuumSettings;
+    }
+
+    const body = JSON.stringify({ executionData });
+    console.log(`[FabricPulse] Table maintenance request: POST ${path}`);
+    console.log(`[FabricPulse] Table maintenance body: ${body}`);
+
+    const response = await fetchWithRetry(
+      () => fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body,
+        timeout: FETCH_TIMEOUT_MS,
+      }),
+      path,
+    );
+
+    if (!response.ok) {
+      if (response.status === 401) this.auth.clearCredential(tenantId);
+      let detail = '';
+      try { const err = await response.json() as { message?: string; errorCode?: string }; detail = err.message ?? err.errorCode ?? ''; } catch { /* ignore */ }
+      throw new Error(`Fabric API error ${response.status} on table maintenance for "${tableName}"${detail ? `: ${detail}` : ''}`);
+    }
+
+    // 202 Accepted — Location header contains the polling URL
+    const locationUrl = response.headers.get('Location') ?? undefined;
+    console.log(`[FabricPulse] Table maintenance response: ${response.status}`);
+    console.log(`[FabricPulse] Table maintenance Location header: ${locationUrl ?? '(none)'}`);
+    // Log all response headers for debugging
+    response.headers.forEach((v, k) => console.log(`[FabricPulse]   header ${k}: ${v}`));
+
+    let jobInstanceId: string | undefined;
+    try {
+      const text = await response.text();
+      console.log(`[FabricPulse] Table maintenance response body: ${text || '(empty)'}`);
+      if (text) {
+        const result = JSON.parse(text) as { id?: string };
+        jobInstanceId = result.id;
+      }
+    } catch { /* 202 may have empty body */ }
+
+    // Try to extract jobInstanceId from Location URL if not in body
+    if (!jobInstanceId && locationUrl) {
+      const match = locationUrl.match(/instances\/([0-9a-f-]{36})/i);
+      if (match) jobInstanceId = match[1];
+      console.log(`[FabricPulse] Extracted jobInstanceId from Location: ${jobInstanceId ?? '(none)'}`);
+    }
+
+    console.log(`[FabricPulse] Table maintenance jobInstanceId: ${jobInstanceId ?? '(none)'}`);
+    return { jobInstanceId, locationUrl };
+  }
+
+  /** Poll a job instance status.
+   *  GET /workspaces/{wsId}/items/{itemId}/jobs/instances/{jobInstanceId} */
+  async getJobInstance(
+    tenantId: string,
+    workspaceId: string,
+    itemId: string,
+    jobInstanceId: string,
+  ): Promise<{ status: string; startTimeUtc?: string; endTimeUtc?: string; failureReason?: string }> {
+    assertUuids(workspaceId, itemId, jobInstanceId);
+    const path = `/workspaces/${workspaceId}/items/${itemId}/jobs/instances/${jobInstanceId}`;
+    const data = await this.request<{
+      status: string;
+      startTimeUtc?: string;
+      endTimeUtc?: string;
+      failureReason?: { message?: string; errorCode?: string } | null;
+    }>(tenantId, path);
+
+    return {
+      status: data.status,
+      startTimeUtc: data.startTimeUtc,
+      endTimeUtc: data.endTimeUtc,
+      failureReason: data.failureReason?.message ?? data.failureReason?.errorCode,
+    };
   }
 
   // ─── Status normalization ─────────────────────────────────────────────────

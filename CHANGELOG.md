@@ -2,6 +2,21 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
+## [1.3.0] - 2026-05-21
+
+### Added
+- **Lakehouse panel**: New "Open Lakehouses" command — browse Microsoft Fabric lakehouses across workspaces, with tenant and workspace filters, text search, and favorites
+- **Table browser**: Expand a lakehouse to list its Delta tables (Managed/External, format, last maintenance) in a resizable detail panel
+- **Table maintenance**: Trigger Optimize (bin-compaction + V-Order) and Vacuum jobs on tables directly from the panel; job status is polled in the background and surfaced per table
+- **Schema-enabled lakehouses**: Manual maintenance dialog (schema + table name) for schema-enabled lakehouses, where the Fabric List Tables API is unavailable
+- **SQL endpoint**: Connection string copy and provisioning status shown per lakehouse
+
+### Fixed
+- **Maintenance timestamp**: Maintenance run times are stored as ISO 8601 UTC, fixing a timezone offset that displayed a just-triggered job as hours old
+
+### Changed
+- **API errors**: Fabric API error messages now include the server-provided detail message when available
+
 ## [1.2.3] - 2026-03-25
 
 ### Fixed

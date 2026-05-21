@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { DashboardPanel } from './panels/DashboardPanel';
+import { LakehousePanel } from './panels/LakehousePanel';
 import { FabricApiService } from './services/fabricApi';
 import { AuthService } from './services/authService';
 import { StorageService } from './services/storageService';
@@ -50,6 +51,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       startPolling(panel);
     }),
 
+    // fabricPulse.openLakehouses ────────────────────────────────────────────
+    vscode.commands.registerCommand('fabricPulse.openLakehouses', () => {
+      LakehousePanel.createOrShow(
+        context.extensionUri, fabricApi, _storage, context,
+      );
+    }),
+
     // fabricPulse.addTenant ────────────────────────────────────────────────
     vscode.commands.registerCommand('fabricPulse.addTenant', async () => {
       const name = await vscode.window.showInputBox({
@@ -90,10 +98,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
       vscode.window.showInformationMessage(`✅ Tenant "${name}" added to FabricPulse`);
 
-      // Refresh dashboard if open
+      // Refresh panels if open
       if (DashboardPanel.currentPanel) {
         DashboardPanel.currentPanel.reloadTenants();
         await DashboardPanel.currentPanel.refresh();
+      }
+      if (LakehousePanel.currentPanel) {
+        LakehousePanel.currentPanel.reloadTenants();
+        await LakehousePanel.currentPanel.refresh();
       }
     }),
 
