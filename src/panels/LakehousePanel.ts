@@ -170,9 +170,7 @@ export class LakehousePanel {
         const lh = this._lakehouses.find(l => l.id === this._expandedLakehouseId);
         if (lh) {
           try {
-            this._tables = await this._fabricApi.getLakehouseTables(
-              this._currentTenantId, lh.workspaceId, lh.id,
-            );
+            this._tables = await this._fetchTables(lh);
             this._enrichTablesWithMaintenance(lh.id);
           } catch (err) {
             console.warn('[FabricPulse] Error fetching tables:', err);
@@ -223,6 +221,7 @@ export class LakehousePanel {
         if (!isUuid(msg.lakehouseId) || !isUuid(msg.workspaceId) || !isUuid(msg.tenantId)) return fail('bad UUID');
         break;
       case 'runMaintenance':
+      case 'computeTableSize':
         if (!isUuid(msg.lakehouseId) || !isUuid(msg.workspaceId)) return fail('bad id');
         if (typeof msg.tableName !== 'string' || msg.tableName.length > 256) return fail('bad tableName');
         break;
@@ -285,21 +284,16 @@ export class LakehousePanel {
           break;
         }
         const targetLh = this._lakehouses.find(l => l.id === msg.lakehouseId);
-        if (targetLh?.isSchemaEnabled) {
-          this._post({ type: 'toast', message: `"${targetLh.displayName}" uses schemas — List Tables not supported by Fabric API. Use 🔧 to run maintenance manually.`, level: 'warning' });
-          break;
-        }
+        if (!targetLh) break;
         this._expandedLakehouseId = msg.lakehouseId;
         this._isLoading = true;
         this._postState();
         try {
-          this._tables = await this._fabricApi.getLakehouseTables(
-            this._currentTenantId, msg.workspaceId, msg.lakehouseId,
-          );
+          this._tables = await this._fetchTables(targetLh);
           this._enrichTablesWithMaintenance(msg.lakehouseId);
           // Cache table count
           this._tableCounts.set(msg.lakehouseId, this._tables.length);
-          if (targetLh) targetLh.tableCount = this._tables.length;
+          targetLh.tableCount = this._tables.length;
         } catch (err: unknown) {
           this._tables = [];
           this._post({ type: 'toast', message: err instanceof Error ? err.message : String(err), level: 'error' });
@@ -327,6 +321,9 @@ export class LakehousePanel {
         if (msg.vOrder) parts.push('V-Order');
         if (msg.vacuum) parts.push('Vacuum');
         const desc = parts.join(' + ');
+        // Schema-qualified key so two tables with the same name in different
+        // schemas don't collide in the maintenance store.
+        const maintKey = msg.schemaName ? `${msg.schemaName}.${msg.tableName}` : msg.tableName;
 
         try {
           const result = await this._fabricApi.triggerTableMaintenance(
@@ -338,7 +335,7 @@ export class LakehousePanel {
               vacuumRetention: msg.vacuumRetention,
             },
           );
-          this._storage.upsertMaintenance(msg.lakehouseId, msg.tableName, `${desc} — InProgress`);
+          this._storage.upsertMaintenance(msg.lakehouseId, maintKey, `${desc} — InProgress`);
           this._enrichTablesWithMaintenance(msg.lakehouseId);
           this._postState();
           this._post({ type: 'toast', message: `${desc} triggered for "${msg.tableName}"`, level: 'success' });
@@ -346,11 +343,30 @@ export class LakehousePanel {
           // Poll job status in background
           if (result.jobInstanceId) {
             this._pollMaintenanceJob(
-              msg.workspaceId, msg.lakehouseId, result.jobInstanceId, msg.tableName, desc,
+              msg.workspaceId, msg.lakehouseId, result.jobInstanceId, maintKey, desc,
             );
           }
         } catch (err: unknown) {
           this._post({ type: 'toast', message: err instanceof Error ? err.message : String(err), level: 'error' });
+        }
+        break;
+      }
+
+      case 'computeTableSize': {
+        try {
+          const size = await this._fabricApi.getTableSize(
+            this._currentTenantId, msg.workspaceId, msg.lakehouseId, msg.tableName, msg.schemaName,
+          );
+          const key = msg.schemaName ? `${msg.schemaName}.${msg.tableName}` : msg.tableName;
+          const t = this._tables.find(
+            tbl => (tbl.schema ? `${tbl.schema}.${tbl.name}` : tbl.name) === key,
+          );
+          if (t) t.sizeBytes = size;
+          this._postState();
+        } catch (err: unknown) {
+          this._post({ type: 'toast', message: err instanceof Error ? err.message : String(err), level: 'error' });
+        } finally {
+          this._post({ type: 'sizeComputed', tableName: msg.tableName, schemaName: msg.schemaName });
         }
         break;
       }
@@ -369,7 +385,7 @@ export class LakehousePanel {
     workspaceId: string,
     lakehouseId: string,
     jobInstanceId: string,
-    tableName: string,
+    maintKey: string,
     desc: string,
   ): Promise<void> {
     const POLL_INTERVAL_MS = 5_000;
@@ -386,7 +402,7 @@ export class LakehousePanel {
         );
 
         const statusLabel = `${desc} — ${job.status}`;
-        this._storage.upsertMaintenance(lakehouseId, tableName, statusLabel);
+        this._storage.upsertMaintenance(lakehouseId, maintKey, statusLabel);
 
         // Update UI if this lakehouse is currently expanded
         if (this._expandedLakehouseId === lakehouseId) {
@@ -399,7 +415,7 @@ export class LakehousePanel {
           const failMsg = job.failureReason ? ` — ${job.failureReason}` : '';
           this._post({
             type: 'toast',
-            message: `${desc} on "${tableName}": ${job.status}${failMsg}`,
+            message: `${desc} on "${maintKey}": ${job.status}${failMsg}`,
             level,
           });
           return;
@@ -411,7 +427,7 @@ export class LakehousePanel {
     }
 
     // Timeout — update status
-    this._storage.upsertMaintenance(lakehouseId, tableName, `${desc} — Timeout (still running?)`);
+    this._storage.upsertMaintenance(lakehouseId, maintKey, `${desc} — Timeout (still running?)`);
     if (this._expandedLakehouseId === lakehouseId) {
       this._enrichTablesWithMaintenance(lakehouseId);
       this._postState();
@@ -423,12 +439,21 @@ export class LakehousePanel {
   private _enrichTablesWithMaintenance(lakehouseId: string): void {
     const maintenances = this._storage.getAllMaintenances(lakehouseId);
     for (const t of this._tables) {
-      const m = maintenances.get(t.name);
+      const key = t.schema ? `${t.schema}.${t.name}` : t.name;
+      const m = maintenances.get(key);
       if (m) {
         t.lastMaintenanceAt = m.triggeredAt;
         t.maintenanceStatus = m.status;
       }
     }
+  }
+
+  /** Schema-enabled lakehouses are listed via OneLake (the Fabric List Tables
+   *  API does not support them); regular lakehouses use the Fabric API. */
+  private _fetchTables(lh: Lakehouse): Promise<LakehouseTable[]> {
+    return lh.isSchemaEnabled
+      ? this._fabricApi.getSchemaLakehouseTables(this._currentTenantId, lh.workspaceId, lh.id)
+      : this._fabricApi.getLakehouseTables(this._currentTenantId, lh.workspaceId, lh.id);
   }
 
   // ─── State ──────────────────────────────────────────────────────────────────

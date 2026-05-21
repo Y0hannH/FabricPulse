@@ -25,6 +25,9 @@ const localFilter = {
 
 const sort = { col: 'name', dir: 1 };
 
+/** Table keys (schema.name) whose on-disk size is currently being computed. */
+const computingSizes = new Set();
+
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.getElementById(id));
 
@@ -64,6 +67,10 @@ window.addEventListener('message', (/** @type {MessageEvent} */ ev) => {
       break;
     case 'toast':
       showToast(msg.message, msg.level ?? 'info');
+      break;
+    case 'sizeComputed':
+      computingSizes.delete(msg.schemaName ? `${msg.schemaName}.${msg.tableName}` : msg.tableName);
+      renderTablesPanel();
       break;
   }
 });
@@ -175,15 +182,10 @@ function buildLakehouseRow(/** @type {any} */ lh) {
     ? state.tables.length
     : (lh.tableCount != null ? lh.tableCount : null);
 
-  const expandDisabled = lh.isSchemaEnabled ? ' disabled' : '';
-  const expandTitle = lh.isSchemaEnabled
-    ? 'Schema-enabled — use 🔧 for manual maintenance'
-    : (isExpanded ? 'Hide tables' : 'Show tables');
-  const tablesLabel = lh.isSchemaEnabled
-    ? 'Schema'
-    : tableCount != null
-      ? `${tableCount} table${tableCount === 1 ? '' : 's'}`
-      : 'Show tables';
+  const expandTitle = isExpanded ? 'Hide tables' : 'Show tables';
+  const tablesLabel = tableCount != null
+    ? `${tableCount} table${tableCount === 1 ? '' : 's'}`
+    : 'Show tables';
 
   return `
 <tr data-lhid="${esc(lh.id)}" data-wsid="${esc(lh.workspaceId)}" class="${isExpanded ? 'row-expanded' : ''}">
@@ -204,8 +206,8 @@ function buildLakehouseRow(/** @type {any} */ lh) {
     <span class="status-badge ${sqlStatusClass}">${esc(sqlStatusLabel)}</span>
   </td>
   <td class="col-tables-count">
-    <button class="tables-toggle${expandDisabled}" data-action="expand" title="${expandTitle}">
-      ${lh.isSchemaEnabled ? '' : `<span class="tables-toggle-chevron">${isExpanded ? '▾' : '▸'}</span>`}
+    <button class="tables-toggle" data-action="expand" title="${expandTitle}">
+      <span class="tables-toggle-chevron">${isExpanded ? '▾' : '▸'}</span>
       <span>${esc(tablesLabel)}</span>
     </button>
   </td>
@@ -307,13 +309,21 @@ function buildTableRow(/** @type {any} */ t, /** @type {string} */ lhid, /** @ty
     : maintStatus.includes('Cancelled') ? 'muted'
     : maintStatus ? 'rate-mid' : '';
 
+  const key = tableKey(t);
+  const sizeCell = t.sizeBytes != null
+    ? `<span title="${esc(String(t.sizeBytes))} bytes">${esc(formatBytes(t.sizeBytes))}</span>`
+    : computingSizes.has(key)
+      ? '<span class="muted">…</span>'
+      : '<button class="action-btn" data-action="calc-size" title="Compute on-disk size">📐</button>';
+
   return `
-<tr data-lhid="${esc(lhid)}" data-wsid="${esc(wsid)}" data-tname="${esc(t.name)}">
+<tr data-lhid="${esc(lhid)}" data-wsid="${esc(wsid)}" data-tname="${esc(t.name)}" data-schema="${esc(t.schema ?? '')}">
   <td class="col-tbl-name">
-    <span class="pipeline-name" title="${esc(t.name)}">${esc(t.name)}</span>
+    ${t.schema ? `<span class="muted text-xs">${esc(t.schema)}.</span>` : ''}<span class="pipeline-name" title="${esc((t.schema ? t.schema + '.' : '') + t.name)}">${esc(t.name)}</span>
   </td>
   <td class="col-tbl-type">${typeBadge}</td>
   <td class="col-tbl-format muted">${esc(t.format)}</td>
+  <td class="col-tbl-size">${sizeCell}</td>
   <td class="col-tbl-maint ${maintClass}" title="${esc(t.lastMaintenanceAt ?? '')}">
     ${maintDate !== '—' ? `${esc(maintDate)} <span class="muted text-xs">(${esc(maintStatus)})</span>` : '—'}
   </td>
@@ -326,14 +336,26 @@ function buildTableRow(/** @type {any} */ t, /** @type {string} */ lhid, /** @ty
 function attachTableListeners() {
   dom.tablesTbody.querySelectorAll('tr').forEach(row => {
     row.addEventListener('click', (/** @type {MouseEvent} */ e) => {
-      const btn = /** @type {HTMLElement} */ (e.target);
-      if (btn.dataset.action !== 'maintenance') return;
+      const target = /** @type {HTMLElement} */ (e.target);
+      const btn = /** @type {HTMLElement|null} */ (target.closest('[data-action]'));
+      if (!btn) return;
       const tr = /** @type {HTMLElement} */ (btn.closest('tr'));
-      openMaintenanceModal(
-        tr.dataset.lhid ?? '',
-        tr.dataset.wsid ?? '',
-        tr.dataset.tname ?? '',
-      );
+      const lhid = tr.dataset.lhid ?? '';
+      const wsid = tr.dataset.wsid ?? '';
+      const tname = tr.dataset.tname ?? '';
+      const schema = tr.dataset.schema ?? '';
+
+      if (btn.dataset.action === 'maintenance') {
+        openMaintenanceModal(lhid, wsid, tname, schema);
+      } else if (btn.dataset.action === 'calc-size') {
+        computingSizes.add(schema ? `${schema}.${tname}` : tname);
+        post({
+          type: 'computeTableSize',
+          lakehouseId: lhid, workspaceId: wsid, tableName: tname,
+          schemaName: schema || undefined,
+        });
+        renderTablesPanel();
+      }
     });
   });
 }
@@ -434,11 +456,11 @@ function openManualMaintenanceModal(/** @type {string} */ lhid, /** @type {strin
 }
 
 // ── Maintenance config modal ──────────────────────────────────────────────────
-function openMaintenanceModal(/** @type {string} */ lhid, /** @type {string} */ wsid, /** @type {string} */ tableName) {
+function openMaintenanceModal(/** @type {string} */ lhid, /** @type {string} */ wsid, /** @type {string} */ tableName, /** @type {string} */ tableSchema = '') {
   // Check if lakehouse is schema-enabled
   const lh = state.lakehouses.find(l => l.id === lhid);
-  const isSchema = lh?.isSchemaEnabled ?? false;
-  const defaultSchema = lh?.defaultSchema ?? 'dbo';
+  const isSchema = !!tableSchema || (lh?.isSchemaEnabled ?? false);
+  const defaultSchema = tableSchema || lh?.defaultSchema || 'dbo';
 
   // Remove any existing modal
   const existing = document.getElementById('maint-overlay');
@@ -660,6 +682,19 @@ function formatRelative(/** @type {string} */ iso) {
 
 function truncate(/** @type {string} */ s, /** @type {number} */ max) {
   return s.length > max ? s.slice(0, max) + '…' : s;
+}
+
+function tableKey(/** @type {any} */ t) {
+  return t.schema ? `${t.schema}.${t.name}` : t.name;
+}
+
+function formatBytes(/** @type {number} */ n) {
+  if (n < 1024) return `${n} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
 }
 
 function esc(/** @type {string} */ s) {

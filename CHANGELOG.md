@@ -2,6 +2,15 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
+## [1.4.0] - 2026-05-21
+
+### Added
+- **Schema-enabled lakehouse tables**: Tables in schema-enabled lakehouses are now listed by walking the OneLake directory structure (the Fabric "List Tables" API does not support them); they can be expanded like any other lakehouse
+- **Table size**: New "Size" column with an on-demand button that computes a table's on-disk footprint by recursively summing its OneLake file sizes
+
+### Changed
+- **Tables column**: The expand control is now a labelled pill button (`▸ N tables`) instead of a small arrow, making it easier to discover
+
 ## [1.3.0] - 2026-05-21
 
 ### Added

@@ -109,6 +109,8 @@ export interface LakehouseTable {
   type: 'Managed' | 'External';
   format: string;
   location: string;
+  schema?: string; // set for schema-enabled lakehouses (discovered via OneLake)
+  sizeBytes?: number; // on-disk footprint, computed on demand
   lastMaintenanceAt?: string;
   maintenanceStatus?: string;
 }
@@ -137,11 +139,13 @@ export type LakehouseToExtMsg =
   | { type: 'copyConnectionString'; connectionString: string }
   | { type: 'runMaintenance'; lakehouseId: string; workspaceId: string; tableName: string;
       schemaName?: string; vOrder: boolean; vacuum: boolean; vacuumRetention?: string }
+  | { type: 'computeTableSize'; lakehouseId: string; workspaceId: string; tableName: string; schemaName?: string }
   | { type: 'openInFabric'; lakehouseId: string; workspaceId: string; tenantId: string };
 
 // Messages sent FROM extension TO lakehouse webview
 export type ExtToLakehouseMsg =
   | { type: 'updateState'; state: LakehouseState }
+  | { type: 'sizeComputed'; tableName: string; schemaName?: string }
   | { type: 'toast'; message: string; level: 'info' | 'success' | 'error' | 'warning' };
 
 // ─── Pattern detection ────────────────────────────────────────────────────────

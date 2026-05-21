@@ -1,9 +1,10 @@
 import fetch from 'node-fetch';
-import { AuthService, POWERBI_SCOPE } from './authService';
+import { AuthService, POWERBI_SCOPE, ONELAKE_SCOPE } from './authService';
 import { Workspace, Pipeline, PipelineRun, RunStatus, Lakehouse, LakehouseTable } from '../models/types';
 
 const BASE_URL = 'https://api.fabric.microsoft.com/v1';
 const POWERBI_BASE_URL = 'https://api.powerbi.com/v1.0/myorg';
+const ONELAKE_BASE = 'https://onelake.dfs.fabric.microsoft.com';
 const MAX_RETRIES = 3;
 const FETCH_TIMEOUT_MS = 30_000;        // 30 s per request — prevents indefinite hangs
 const MAX_RETRY_WAIT_MS = 60_000;       // never wait more than 60 s regardless of Retry-After header
@@ -580,6 +581,115 @@ export class FabricApiService {
       format: t.format,
       location: t.location,
     }));
+  }
+
+  /** Lists the immediate child paths of a OneLake directory via the ADLS Gen2
+   *  DFS API. Used to enumerate schemas/tables in schema-enabled lakehouses,
+   *  which the Fabric "List Tables" API does not support. */
+  private async listOneLakePaths(
+    tenantId: string,
+    workspaceId: string,
+    directory: string,
+    recursive = false,
+  ): Promise<{ name: string; isDirectory: boolean; contentLength: number }[]> {
+    const token = await this.auth.getToken(tenantId, ONELAKE_SCOPE);
+    const results: { name: string; isDirectory: boolean; contentLength: number }[] = [];
+    let continuation: string | undefined;
+    let pages = 0;
+
+    do {
+      let url = `${ONELAKE_BASE}/${workspaceId}?resource=filesystem&recursive=${recursive}&directory=${directory}`;
+      if (continuation) url += `&continuation=${encodeURIComponent(continuation)}`;
+
+      const response = await fetchWithRetry(
+        () => fetch(url, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${token}` },
+          timeout: FETCH_TIMEOUT_MS,
+        }),
+        'onelake list paths',
+      );
+
+      // 404 — the Tables folder (or schema) does not exist yet: treat as empty
+      if (response.status === 404) return results;
+
+      if (!response.ok) {
+        if (response.status === 401) this.auth.clearCredential(tenantId);
+        let detail = '';
+        try { const err = await response.json() as { error?: { message?: string } }; detail = err.error?.message ?? ''; } catch { /* ignore */ }
+        throw new Error(`OneLake API error ${response.status} listing tables${detail ? `: ${detail}` : ''}`);
+      }
+
+      const data = await response.json() as {
+        paths?: { name: string; isDirectory?: string; contentLength?: string }[];
+      };
+      for (const p of data.paths ?? []) {
+        results.push({
+          name: p.name,
+          isDirectory: p.isDirectory === 'true',
+          contentLength: p.contentLength ? Number(p.contentLength) : 0,
+        });
+      }
+      continuation = response.headers.get('x-ms-continuation') || undefined;
+      pages++;
+    } while (continuation && pages < 50);
+
+    return results;
+  }
+
+  /** Lists tables in a schema-enabled lakehouse by walking the OneLake directory
+   *  structure (Tables/{schema}/{table}). The Fabric "List Tables" API does not
+   *  support schema-enabled lakehouses. */
+  async getSchemaLakehouseTables(
+    tenantId: string,
+    workspaceId: string,
+    lakehouseId: string,
+  ): Promise<LakehouseTable[]> {
+    assertUuids(workspaceId, lakehouseId);
+    const baseName = (p: string) => p.split('/').filter(Boolean).pop() ?? p;
+
+    const schemaDirs = await this.listOneLakePaths(tenantId, workspaceId, `${lakehouseId}/Tables`);
+    const schemas = schemaDirs.filter(d => d.isDirectory).map(d => baseName(d.name));
+
+    const tables: LakehouseTable[] = [];
+    for (const schema of schemas) {
+      const tableDirs = await this.listOneLakePaths(
+        tenantId, workspaceId, `${lakehouseId}/Tables/${encodeURIComponent(schema)}`,
+      );
+      for (const d of tableDirs) {
+        if (!d.isDirectory) continue;
+        tables.push({
+          name: baseName(d.name),
+          schema,
+          type: 'Managed',
+          format: 'delta',
+          location: `${ONELAKE_BASE}/${workspaceId}/${d.name}`,
+        });
+      }
+    }
+
+    tables.sort((a, b) =>
+      (a.schema ?? '').localeCompare(b.schema ?? '') || a.name.localeCompare(b.name));
+    return tables;
+  }
+
+  /** Computes the on-disk size of a lakehouse table by recursively summing the
+   *  byte length of every file under its OneLake directory. This is the storage
+   *  footprint (includes Delta file versions not yet vacuumed), not the logical
+   *  table size. */
+  async getTableSize(
+    tenantId: string,
+    workspaceId: string,
+    lakehouseId: string,
+    tableName: string,
+    schema?: string,
+  ): Promise<number> {
+    assertUuids(workspaceId, lakehouseId);
+    const directory = schema
+      ? `${lakehouseId}/Tables/${encodeURIComponent(schema)}/${encodeURIComponent(tableName)}`
+      : `${lakehouseId}/Tables/${encodeURIComponent(tableName)}`;
+    const paths = await this.listOneLakePaths(tenantId, workspaceId, directory, true);
+    return paths.reduce((sum, p) => sum + (p.isDirectory ? 0 : p.contentLength), 0);
   }
 
   /** Trigger table maintenance on a specific table.
