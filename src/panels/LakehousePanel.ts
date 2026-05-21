@@ -46,6 +46,8 @@ export class LakehousePanel {
   private _disposed = false;
   /** Cache table counts per lakehouse after first expand */
   private _tableCounts = new Map<string, number>();
+  /** Cache computed table sizes — key: `${lakehouseId}:${schema.table}` */
+  private _tableSizes = new Map<string, number>();
 
   // ─── Factory ────────────────────────────────────────────────────────────────
 
@@ -170,11 +172,16 @@ export class LakehousePanel {
         const lh = this._lakehouses.find(l => l.id === this._expandedLakehouseId);
         if (lh) {
           try {
-            this._tables = await this._fetchTables(lh);
-            this._enrichTablesWithMaintenance(lh.id);
+            const fetched = await this._fetchTables(lh);
+            // Guard against the expansion changing during the fetch
+            if (this._expandedLakehouseId === lh.id) {
+              this._tables = fetched;
+              this._enrichTablesWithMaintenance(lh.id);
+              this._applyCachedSizes(lh.id);
+            }
           } catch (err) {
             console.warn('[FabricPulse] Error fetching tables:', err);
-            this._tables = [];
+            if (this._expandedLakehouseId === lh.id) this._tables = [];
           }
         } else {
           this._expandedLakehouseId = '';
@@ -289,13 +296,17 @@ export class LakehousePanel {
         this._isLoading = true;
         this._postState();
         try {
-          this._tables = await this._fetchTables(targetLh);
+          const fetched = await this._fetchTables(targetLh);
+          // A newer expand/collapse superseded this one — discard the result
+          if (this._expandedLakehouseId !== msg.lakehouseId) break;
+          this._tables = fetched;
           this._enrichTablesWithMaintenance(msg.lakehouseId);
+          this._applyCachedSizes(msg.lakehouseId);
           // Cache table count
           this._tableCounts.set(msg.lakehouseId, this._tables.length);
           targetLh.tableCount = this._tables.length;
         } catch (err: unknown) {
-          this._tables = [];
+          if (this._expandedLakehouseId === msg.lakehouseId) this._tables = [];
           this._post({ type: 'toast', message: err instanceof Error ? err.message : String(err), level: 'error' });
         } finally {
           this._isLoading = false;
@@ -324,10 +335,12 @@ export class LakehousePanel {
         // Schema-qualified key so two tables with the same name in different
         // schemas don't collide in the maintenance store.
         const maintKey = msg.schemaName ? `${msg.schemaName}.${msg.tableName}` : msg.tableName;
+        // Capture the tenant now — it must not change under the background poll.
+        const tenantId = this._currentTenantId;
 
         try {
           const result = await this._fabricApi.triggerTableMaintenance(
-            this._currentTenantId, msg.workspaceId, msg.lakehouseId, msg.tableName,
+            tenantId, msg.workspaceId, msg.lakehouseId, msg.tableName,
             {
               schemaName: msg.schemaName,
               vOrder: msg.vOrder,
@@ -343,7 +356,7 @@ export class LakehousePanel {
           // Poll job status in background
           if (result.jobInstanceId) {
             this._pollMaintenanceJob(
-              msg.workspaceId, msg.lakehouseId, result.jobInstanceId, maintKey, desc,
+              tenantId, msg.workspaceId, msg.lakehouseId, result.jobInstanceId, maintKey, desc,
             );
           }
         } catch (err: unknown) {
@@ -358,6 +371,7 @@ export class LakehousePanel {
             this._currentTenantId, msg.workspaceId, msg.lakehouseId, msg.tableName, msg.schemaName,
           );
           const key = msg.schemaName ? `${msg.schemaName}.${msg.tableName}` : msg.tableName;
+          this._tableSizes.set(`${msg.lakehouseId}:${key}`, size);
           const t = this._tables.find(
             tbl => (tbl.schema ? `${tbl.schema}.${tbl.name}` : tbl.name) === key,
           );
@@ -382,6 +396,7 @@ export class LakehousePanel {
   // ─── Job polling ─────────────────────────────────────────────────────────
 
   private async _pollMaintenanceJob(
+    tenantId: string,
     workspaceId: string,
     lakehouseId: string,
     jobInstanceId: string,
@@ -398,7 +413,7 @@ export class LakehousePanel {
 
       try {
         const job = await this._fabricApi.getJobInstance(
-          this._currentTenantId, workspaceId, lakehouseId, jobInstanceId,
+          tenantId, workspaceId, lakehouseId, jobInstanceId,
         );
 
         const statusLabel = `${desc} — ${job.status}`;
@@ -445,6 +460,15 @@ export class LakehousePanel {
         t.lastMaintenanceAt = m.triggeredAt;
         t.maintenanceStatus = m.status;
       }
+    }
+  }
+
+  /** Re-applies sizes computed earlier in this session to freshly fetched tables. */
+  private _applyCachedSizes(lakehouseId: string): void {
+    for (const t of this._tables) {
+      const key = t.schema ? `${t.schema}.${t.name}` : t.name;
+      const cached = this._tableSizes.get(`${lakehouseId}:${key}`);
+      if (cached !== undefined) t.sizeBytes = cached;
     }
   }
 

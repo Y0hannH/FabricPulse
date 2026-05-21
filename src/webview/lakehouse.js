@@ -28,6 +28,9 @@ const sort = { col: 'name', dir: 1 };
 /** Table keys (schema.name) whose on-disk size is currently being computed. */
 const computingSizes = new Set();
 
+/** User-resized height of the tables panel, kept across expand/collapse. */
+let tablesPanelHeight = '40vh';
+
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.getElementById(id));
 
@@ -250,7 +253,6 @@ function handleLakehouseClick(/** @type {MouseEvent} */ e) {
 
     case 'copy-conn':
       post({ type: 'copyConnectionString', connectionString: btn.dataset.conn ?? '' });
-      showToast('Connection string copied!', 'success');
       break;
 
     case 'manual-maint':
@@ -268,16 +270,12 @@ function renderTablesPanel() {
   if (!state.expandedLakehouseId) {
     dom.tablesPanel.classList.add('hidden');
     dom.tablesSplitter.classList.add('hidden');
-    dom.tablesPanel.style.height = '';
     return;
   }
 
   dom.tablesPanel.classList.remove('hidden');
   dom.tablesSplitter.classList.remove('hidden');
-  // Set a sensible default height if not already resized by user
-  if (!dom.tablesPanel.style.height) {
-    dom.tablesPanel.style.height = '40vh';
-  }
+  dom.tablesPanel.style.height = tablesPanelHeight;
   const lh = state.lakehouses.find(l => l.id === state.expandedLakehouseId);
   dom.tablesTitle.textContent = lh ? `Tables — ${lh.displayName}` : 'Tables';
 
@@ -310,10 +308,10 @@ function buildTableRow(/** @type {any} */ t, /** @type {string} */ lhid, /** @ty
     : maintStatus ? 'rate-mid' : '';
 
   const key = tableKey(t);
-  const sizeCell = t.sizeBytes != null
-    ? `<span title="${esc(String(t.sizeBytes))} bytes">${esc(formatBytes(t.sizeBytes))}</span>`
-    : computingSizes.has(key)
-      ? '<span class="muted">…</span>'
+  const sizeCell = computingSizes.has(key)
+    ? '<span class="muted">…</span>'
+    : t.sizeBytes != null
+      ? `<button class="size-btn" data-action="calc-size" title="${esc(String(t.sizeBytes))} bytes — click to recompute">${esc(formatBytes(t.sizeBytes))}</button>`
       : '<button class="action-btn" data-action="calc-size" title="Compute on-disk size">📐</button>';
 
   return `
@@ -446,11 +444,6 @@ function openManualMaintenanceModal(/** @type {string} */ lhid, /** @type {strin
       vacuum,
       vacuumRetention,
     });
-
-    const parts = ['Optimize'];
-    if (vOrder) parts.push('V-Order');
-    if (vacuum) parts.push('Vacuum');
-    showToast(`${parts.join(' + ')} triggered for "${schemaName ? schemaName + '.' : ''}${tableName}"…`, 'info');
     overlay.remove();
   });
 }
@@ -541,11 +534,6 @@ function openMaintenanceModal(/** @type {string} */ lhid, /** @type {string} */ 
       vacuum,
       vacuumRetention: vacuumRetention || undefined,
     });
-
-    const parts = ['Optimize'];
-    if (vOrder) parts.push('V-Order');
-    if (vacuum) parts.push('Vacuum');
-    showToast(`${parts.join(' + ')} triggered for "${tableName}"…`, 'info');
     overlay.remove();
   });
 }
@@ -689,6 +677,7 @@ function tableKey(/** @type {any} */ t) {
 }
 
 function formatBytes(/** @type {number} */ n) {
+  if (!Number.isFinite(n) || n < 0) return '—';
   if (n < 1024) return `${n} B`;
   const units = ['KB', 'MB', 'GB', 'TB'];
   let v = n / 1024;
@@ -732,6 +721,7 @@ function esc(/** @type {string} */ s) {
   document.addEventListener('mouseup', () => {
     if (!dragging) return;
     dragging = false;
+    tablesPanelHeight = dom.tablesPanel.style.height || tablesPanelHeight;
     dom.tablesSplitter.classList.remove('active');
     document.body.style.cursor = '';
     document.body.style.userSelect = '';

@@ -2,6 +2,19 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
+## [1.4.1] - 2026-05-21
+
+### Fixed
+- **Table size recompute**: The size cell is now a button — clicking a computed size recomputes it (e.g. after a Vacuum), instead of being a static value
+- **Expand race condition**: Rapidly expanding different lakehouses could display one lakehouse's tables under another; the stale result is now discarded
+- **Maintenance polling**: A background maintenance job now polls with the tenant captured at trigger time, so switching the active tenant mid-job no longer breaks status tracking
+- **Table name validation**: Maintenance no longer rejects valid table names that start with a digit or contain hyphens (the previous check was overly strict)
+
+### Changed
+- Removed verbose debug logging from the table-maintenance request path
+- Computed table sizes are cached for the session and survive a refresh or collapse/expand
+- Removed duplicate toast notifications on maintenance trigger and connection-string copy
+
 ## [1.4.0] - 2026-05-21
 
 ### Added

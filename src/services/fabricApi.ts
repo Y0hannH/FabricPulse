@@ -627,7 +627,7 @@ export class FabricApiService {
         results.push({
           name: p.name,
           isDirectory: p.isDirectory === 'true',
-          contentLength: p.contentLength ? Number(p.contentLength) : 0,
+          contentLength: Number(p.contentLength) || 0,
         });
       }
       continuation = response.headers.get('x-ms-continuation') || undefined;
@@ -708,11 +708,20 @@ export class FabricApiService {
     },
   ): Promise<{ jobInstanceId?: string; locationUrl?: string }> {
     assertUuids(workspaceId, lakehouseId);
-    // Validate table name: allow alphanumeric + underscores only (prevent injection)
-    if (!/^[a-zA-Z_][a-zA-Z0-9_]{0,255}$/.test(tableName)) {
+    // Table/schema names go only into the JSON body (JSON.stringify handles
+    // escaping, they never touch the URL) — just reject empty, over-long or
+    // control-character values rather than restricting to SQL identifiers.
+    const isValidName = (s: string): boolean => {
+      if (s.length < 1 || s.length > 256) return false;
+      for (let i = 0; i < s.length; i++) {
+        if (s.charCodeAt(i) < 0x20) return false; // reject control characters
+      }
+      return true;
+    };
+    if (!isValidName(tableName)) {
       throw new Error(`Invalid table name: ${tableName}`);
     }
-    if (options?.schemaName && !/^[a-zA-Z_][a-zA-Z0-9_]{0,127}$/.test(options.schemaName)) {
+    if (options?.schemaName && !isValidName(options.schemaName)) {
       throw new Error(`Invalid schema name: ${options.schemaName}`);
     }
 
@@ -740,8 +749,6 @@ export class FabricApiService {
     }
 
     const body = JSON.stringify({ executionData });
-    console.log(`[FabricPulse] Table maintenance request: POST ${path}`);
-    console.log(`[FabricPulse] Table maintenance body: ${body}`);
 
     const response = await fetchWithRetry(
       () => fetch(url, {
@@ -765,29 +772,22 @@ export class FabricApiService {
 
     // 202 Accepted — Location header contains the polling URL
     const locationUrl = response.headers.get('Location') ?? undefined;
-    console.log(`[FabricPulse] Table maintenance response: ${response.status}`);
-    console.log(`[FabricPulse] Table maintenance Location header: ${locationUrl ?? '(none)'}`);
-    // Log all response headers for debugging
-    response.headers.forEach((v, k) => console.log(`[FabricPulse]   header ${k}: ${v}`));
 
     let jobInstanceId: string | undefined;
     try {
       const text = await response.text();
-      console.log(`[FabricPulse] Table maintenance response body: ${text || '(empty)'}`);
       if (text) {
         const result = JSON.parse(text) as { id?: string };
         jobInstanceId = result.id;
       }
     } catch { /* 202 may have empty body */ }
 
-    // Try to extract jobInstanceId from Location URL if not in body
+    // Fall back to the jobInstanceId embedded in the Location URL
     if (!jobInstanceId && locationUrl) {
       const match = locationUrl.match(/instances\/([0-9a-f-]{36})/i);
       if (match) jobInstanceId = match[1];
-      console.log(`[FabricPulse] Extracted jobInstanceId from Location: ${jobInstanceId ?? '(none)'}`);
     }
 
-    console.log(`[FabricPulse] Table maintenance jobInstanceId: ${jobInstanceId ?? '(none)'}`);
     return { jobInstanceId, locationUrl };
   }
 
