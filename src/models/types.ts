@@ -140,13 +140,21 @@ export type LakehouseToExtMsg =
   | { type: 'runMaintenance'; lakehouseId: string; workspaceId: string; tableName: string;
       schemaName?: string; vOrder: boolean; vacuum: boolean; vacuumRetention?: string }
   | { type: 'computeTableSize'; lakehouseId: string; workspaceId: string; tableName: string; schemaName?: string }
-  | { type: 'openInFabric'; lakehouseId: string; workspaceId: string; tenantId: string };
+  | { type: 'openInFabric'; lakehouseId: string; workspaceId: string; tenantId: string }
+  | { type: 'openOverview'; lakehouseId: string; workspaceId: string }
+  | { type: 'computeOverviewBatch'; lakehouseId: string; workspaceId: string; tables: Array<{ name: string; schema?: string }> }
+  | { type: 'cancelOverviewBatch' }
+  | { type: 'runBulkMaintenance'; lakehouseId: string; workspaceId: string;
+      tables: Array<{ name: string; schema?: string }>; vOrder: boolean; vacuum: boolean; vacuumRetention?: string };
 
 // Messages sent FROM extension TO lakehouse webview
 export type ExtToLakehouseMsg =
   | { type: 'updateState'; state: LakehouseState }
   | { type: 'sizeComputed'; tableName: string; schemaName?: string }
-  | { type: 'toast'; message: string; level: 'info' | 'success' | 'error' | 'warning' };
+  | { type: 'toast'; message: string; level: 'info' | 'success' | 'error' | 'warning' }
+  | { type: 'overviewReady'; lakehouseId: string; allTables: LakehouseTable[] }
+  | { type: 'overviewBatchProgress'; tableKey: string; sizeBytes: number; done: number; total: number; cancelled?: boolean }
+  | { type: 'bulkMaintenanceProgress'; tableKey: string; done: number; total: number; error?: string };
 
 // ─── Pattern detection ────────────────────────────────────────────────────────
 

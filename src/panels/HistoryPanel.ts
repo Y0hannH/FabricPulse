@@ -203,9 +203,10 @@ export class HistoryPanel {
     );
     const nonce = getNonce();
 
+    const v = Date.now();
     html = html
-      .replace(/\{\{CSS_URI\}\}/g, cssUri.toString())
-      .replace(/\{\{JS_URI\}\}/g, jsUri.toString())
+      .replace(/\{\{CSS_URI\}\}/g, cssUri.toString() + '?v=' + v)
+      .replace(/\{\{JS_URI\}\}/g, jsUri.toString() + '?v=' + v)
       .replace(/\{\{NONCE\}\}/g, nonce)
       .replace(/\{\{WEBVIEW_CSP_SOURCE\}\}/g, this._panel.webview.cspSource);
 

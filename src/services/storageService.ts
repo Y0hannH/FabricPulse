@@ -201,6 +201,15 @@ export class StorageService {
         status        TEXT,
         UNIQUE(lakehouse_id, table_name)
       );
+
+      CREATE TABLE IF NOT EXISTS lakehouse_table_sizes (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        lakehouse_id TEXT NOT NULL,
+        table_key    TEXT NOT NULL,
+        size_bytes   INTEGER NOT NULL,
+        computed_at  TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(lakehouse_id, table_key)
+      );
     `);
   }
 
@@ -230,6 +239,11 @@ export class StorageService {
       addColumn('pipeline_runs', 'item_type', "TEXT DEFAULT 'pipeline'");
       addColumn('favorites', 'item_type', "TEXT DEFAULT 'pipeline'");
       this.db.run('UPDATE schema_version SET version = 3');
+      this._flush();
+    }
+    if (current < 4) {
+      // lakehouse_table_sizes already created in createSchema via CREATE TABLE IF NOT EXISTS
+      this.db.run('UPDATE schema_version SET version = 4');
       this._flush();
     }
   }
@@ -505,6 +519,29 @@ export class StorageService {
         triggeredAt: r['triggered_at'] as string,
         status: (r['status'] as string) ?? '',
       });
+    }
+    return map;
+  }
+
+  // ─── lakehouse_table_sizes ────────────────────────────────────────────────
+
+  upsertTableSize(lakehouseId: string, tableKey: string, sizeBytes: number): void {
+    this.db.run(
+      `INSERT OR REPLACE INTO lakehouse_table_sizes (lakehouse_id, table_key, size_bytes, computed_at)
+       VALUES (?, ?, ?, ?)`,
+      [lakehouseId, tableKey, sizeBytes, new Date().toISOString()],
+    );
+    this._flush();
+  }
+
+  getTableSizes(lakehouseId: string): Map<string, number> {
+    const result = this.db.exec(
+      'SELECT table_key, size_bytes FROM lakehouse_table_sizes WHERE lakehouse_id = ?',
+      [lakehouseId],
+    );
+    const map = new Map<string, number>();
+    for (const r of this._rows(result)) {
+      map.set(r['table_key'] as string, r['size_bytes'] as number);
     }
     return map;
   }

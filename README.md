@@ -3,7 +3,7 @@
 > Real-time pulse of your Microsoft Fabric pipelines — right inside VS Code.
 
 ![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.85-007ACC?style=flat-square&logo=visualstudiocode)
-![Version](https://img.shields.io/badge/Version-1.4.2-blue?style=flat-square)
+![Version](https://img.shields.io/badge/Version-1.5.0-blue?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-00B4D8?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-In%20Development-orange?style=flat-square)
 
@@ -31,7 +31,7 @@ You choose which pipelines matter. FabricPulse watches them, stores their histor
 | 📤 | **Export** | CSV or JSON export of run history for client reports |
 | 📝 | **Annotations** | Manual notes on specific dates to correlate performance with deployments |
 | 🧮 | **Semantic Models** | Monitor Power BI / Fabric Semantic Model refreshes and statuses |
-| 🗄️ | **Lakehouses** | Browse lakehouses, inspect Delta tables, compute table size, and run Optimize/Vacuum maintenance |
+| 🗄️ | **Lakehouses** | Browse lakehouses, inspect Delta tables, compute table size, refresh sizes on demand, and run Optimize/Vacuum maintenance |
 | 🔢 | **Total Executions** | Total run count displayed per pipeline to gauge execution frequency |
 | 🚀 | **Smart Loading** | Priority loading for favorites, configurable batching, instant cache on startup |
 | 🚫 | **Workspace Blacklist** | Exclude workspaces from polling (by ID or name) to reduce noise |
@@ -140,8 +140,10 @@ Dashboard, favorites, history, alerts, multi-tenant, CSV/JSON export, pattern de
 ### ✅ Lakehouses
 - Dedicated Lakehouse panel — browse lakehouses across workspaces
 - Delta table browser, including schema-enabled lakehouses (via OneLake)
-- On-demand table size (on-disk footprint)
+- On-demand table size (on-disk footprint), with per-table refresh button
 - Table maintenance — Optimize (V-Order) and Vacuum, with background job tracking
+- Overview modal — ranked table sizes, storage analysis, maintenance health, schema breakdown
+- Table name filter and individual size refresh in the Overview
 
 ### 🔲 Notebooks & Spark Jobs
 - Fabric Notebooks support (runs, durations, statuses)

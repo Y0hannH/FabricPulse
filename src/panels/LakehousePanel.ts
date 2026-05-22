@@ -48,6 +48,8 @@ export class LakehousePanel {
   private _tableCounts = new Map<string, number>();
   /** Cache computed table sizes — key: `${lakehouseId}:${schema.table}` */
   private _tableSizes = new Map<string, number>();
+  /** Set to true to cancel an in-progress computeOverviewBatch loop. */
+  private _overviewBatchCancelled = false;
 
   // ─── Factory ────────────────────────────────────────────────────────────────
 
@@ -235,6 +237,28 @@ export class LakehousePanel {
       case 'copyConnectionString':
         if (typeof msg.connectionString !== 'string' || msg.connectionString.length > 1024) return fail('bad connectionString');
         break;
+      case 'openOverview':
+        if (!isUuid(msg.lakehouseId) || !isUuid(msg.workspaceId)) return fail('bad id');
+        break;
+      case 'computeOverviewBatch':
+        if (!isUuid(msg.lakehouseId) || !isUuid(msg.workspaceId)) return fail('bad id');
+        if (!Array.isArray(msg.tables) || msg.tables.length > 1000) return fail('bad tables');
+        for (const t of msg.tables) {
+          if (typeof t.name !== 'string' || t.name.length > 256) return fail('bad table name');
+          if (t.schema !== undefined && (typeof t.schema !== 'string' || t.schema.length > 128)) return fail('bad schema');
+        }
+        break;
+      case 'cancelOverviewBatch':
+        break;
+      case 'runBulkMaintenance':
+        if (!isUuid(msg.lakehouseId) || !isUuid(msg.workspaceId)) return fail('bad id');
+        if (!Array.isArray(msg.tables) || msg.tables.length === 0 || msg.tables.length > 1000) return fail('bad tables');
+        for (const t of msg.tables) {
+          if (typeof t.name !== 'string' || t.name.length > 256) return fail('bad table name');
+          if (t.schema !== undefined && (typeof t.schema !== 'string' || t.schema.length > 128)) return fail('bad schema');
+        }
+        if (typeof msg.vOrder !== 'boolean' || typeof msg.vacuum !== 'boolean') return fail('bad maintenance options');
+        break;
     }
     return true;
   }
@@ -372,6 +396,7 @@ export class LakehousePanel {
           );
           const key = msg.schemaName ? `${msg.schemaName}.${msg.tableName}` : msg.tableName;
           this._tableSizes.set(`${msg.lakehouseId}:${key}`, size);
+          this._storage.upsertTableSize(msg.lakehouseId, key, size);
           const t = this._tables.find(
             tbl => (tbl.schema ? `${tbl.schema}.${tbl.name}` : tbl.name) === key,
           );
@@ -388,6 +413,100 @@ export class LakehousePanel {
       case 'openInFabric': {
         const url = `https://app.fabric.microsoft.com/groups/${msg.workspaceId}/lakehouses/${msg.lakehouseId}`;
         await vscode.env.openExternal(vscode.Uri.parse(url));
+        break;
+      }
+
+      case 'openOverview': {
+        const lh = this._lakehouses.find(l => l.id === msg.lakehouseId);
+        if (!lh) break;
+        try {
+          // Reuse already-fetched tables if this lakehouse is expanded, else fetch
+          let tables: LakehouseTable[];
+          if (this._expandedLakehouseId === msg.lakehouseId && this._tables.length > 0) {
+            tables = this._tables.map(t => ({ ...t }));
+          } else {
+            tables = await this._fetchTables(lh);
+          }
+          this._enrichTablesWithMaintenance(msg.lakehouseId, tables);
+          // Merge storage sizes (persisted) with in-memory cache
+          const stored = this._storage.getTableSizes(msg.lakehouseId);
+          for (const t of tables) {
+            const key = t.schema ? `${t.schema}.${t.name}` : t.name;
+            const inMem = this._tableSizes.get(`${msg.lakehouseId}:${key}`);
+            const onDisk = stored.get(key);
+            if (inMem !== undefined) t.sizeBytes = inMem;
+            else if (onDisk !== undefined) t.sizeBytes = onDisk;
+          }
+          this._post({ type: 'overviewReady', lakehouseId: msg.lakehouseId, allTables: tables });
+        } catch (err: unknown) {
+          this._post({ type: 'toast', message: err instanceof Error ? err.message : String(err), level: 'error' });
+        }
+        break;
+      }
+
+      case 'computeOverviewBatch': {
+        this._overviewBatchCancelled = false;
+        const total = msg.tables.length;
+        for (let i = 0; i < msg.tables.length; i++) {
+          if (this._disposed) return;
+          if (this._overviewBatchCancelled) {
+            this._post({ type: 'overviewBatchProgress', tableKey: '', sizeBytes: 0, done: i, total, cancelled: true });
+            break;
+          }
+          const t = msg.tables[i];
+          const key = t.schema ? `${t.schema}.${t.name}` : t.name;
+          try {
+            const size = await this._fabricApi.getTableSize(
+              this._currentTenantId, msg.workspaceId, msg.lakehouseId, t.name, t.schema,
+            );
+            this._tableSizes.set(`${msg.lakehouseId}:${key}`, size);
+            this._storage.upsertTableSize(msg.lakehouseId, key, size);
+            if (this._expandedLakehouseId === msg.lakehouseId) {
+              const tbl = this._tables.find(tb => (tb.schema ? `${tb.schema}.${tb.name}` : tb.name) === key);
+              if (tbl) { tbl.sizeBytes = size; this._postState(); }
+            }
+            this._post({ type: 'overviewBatchProgress', tableKey: key, sizeBytes: size, done: i + 1, total });
+          } catch (err) {
+            console.warn(`[FabricPulse] Failed to compute size for ${key}:`, err);
+            this._post({ type: 'overviewBatchProgress', tableKey: key, sizeBytes: -1, done: i + 1, total });
+          }
+        }
+        break;
+      }
+
+      case 'cancelOverviewBatch':
+        this._overviewBatchCancelled = true;
+        break;
+
+      case 'runBulkMaintenance': {
+        const tenantId = this._currentTenantId;
+        const parts: string[] = ['Optimize'];
+        if (msg.vOrder) parts.push('V-Order');
+        if (msg.vacuum) parts.push('Vacuum');
+        const desc = parts.join(' + ');
+        const total = msg.tables.length;
+
+        for (let i = 0; i < msg.tables.length; i++) {
+          if (this._disposed) return;
+          const t = msg.tables[i];
+          const maintKey = t.schema ? `${t.schema}.${t.name}` : t.name;
+          try {
+            const result = await this._fabricApi.triggerTableMaintenance(
+              tenantId, msg.workspaceId, msg.lakehouseId, t.name,
+              { schemaName: t.schema, vOrder: msg.vOrder, vacuum: msg.vacuum, vacuumRetention: msg.vacuumRetention },
+            );
+            this._storage.upsertMaintenance(msg.lakehouseId, maintKey, `${desc} — InProgress`);
+            this._post({ type: 'bulkMaintenanceProgress', tableKey: maintKey, done: i + 1, total });
+            if (result.jobInstanceId) {
+              this._pollMaintenanceJob(tenantId, msg.workspaceId, msg.lakehouseId, result.jobInstanceId, maintKey, desc);
+            }
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            this._post({ type: 'bulkMaintenanceProgress', tableKey: maintKey, done: i + 1, total, error: errMsg });
+          }
+        }
+        this._enrichTablesWithMaintenance(msg.lakehouseId);
+        this._postState();
         break;
       }
     }
@@ -451,9 +570,10 @@ export class LakehousePanel {
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
-  private _enrichTablesWithMaintenance(lakehouseId: string): void {
+  private _enrichTablesWithMaintenance(lakehouseId: string, tables?: LakehouseTable[]): void {
+    const target = tables ?? this._tables;
     const maintenances = this._storage.getAllMaintenances(lakehouseId);
-    for (const t of this._tables) {
+    for (const t of target) {
       const key = t.schema ? `${t.schema}.${t.name}` : t.name;
       const m = maintenances.get(key);
       if (m) {
@@ -463,8 +583,14 @@ export class LakehousePanel {
     }
   }
 
-  /** Re-applies sizes computed earlier in this session to freshly fetched tables. */
+  /** Re-applies sizes from storage + in-memory cache to freshly fetched tables. */
   private _applyCachedSizes(lakehouseId: string): void {
+    // Seed in-memory cache from storage for any sizes not already in memory
+    const stored = this._storage.getTableSizes(lakehouseId);
+    for (const [key, size] of stored) {
+      const mapKey = `${lakehouseId}:${key}`;
+      if (!this._tableSizes.has(mapKey)) this._tableSizes.set(mapKey, size);
+    }
     for (const t of this._tables) {
       const key = t.schema ? `${t.schema}.${t.name}` : t.name;
       const cached = this._tableSizes.get(`${lakehouseId}:${key}`);
@@ -508,17 +634,25 @@ export class LakehousePanel {
     const htmlPath = path.join(webviewDir.fsPath, 'lakehouse.html');
     let html = fs.readFileSync(htmlPath, 'utf-8');
 
+    // Read JS inline so VS Code's webview resource-server cache is bypassed entirely.
+    // webview.html is always a fresh string assignment — never cached.
+    const jsContent = fs.readFileSync(
+      path.join(webviewDir.fsPath, 'lakehouse.js'), 'utf-8',
+    );
+
     const cssUri = this._panel.webview.asWebviewUri(
       vscode.Uri.joinPath(webviewDir, 'dashboard.css'),
     );
-    const jsUri = this._panel.webview.asWebviewUri(
-      vscode.Uri.joinPath(webviewDir, 'lakehouse.js'),
+    const overviewCssUri = this._panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(webviewDir, 'overview.css'),
     );
     const nonce = getNonce();
 
+    const v = Date.now();
     html = html
-      .replace(/\{\{CSS_URI\}\}/g, cssUri.toString())
-      .replace(/\{\{JS_URI\}\}/g, jsUri.toString())
+      .replace(/\{\{CSS_URI\}\}/g, cssUri.toString() + '?v=' + v)
+      .replace(/\{\{OVERVIEW_CSS_URI\}\}/g, overviewCssUri.toString() + '?v=' + v)
+      .replace('{{JS_INLINE}}', jsContent)
       .replace(/\{\{NONCE\}\}/g, nonce)
       .replace(/\{\{WEBVIEW_CSP_SOURCE\}\}/g, this._panel.webview.cspSource);
 

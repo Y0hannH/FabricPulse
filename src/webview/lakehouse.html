@@ -9,7 +9,7 @@
                  img-src data:;" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="{{CSS_URI}}" />
-  <title>FabricPulse — Lakehouses</title>
+  <link rel="stylesheet" href="{{OVERVIEW_CSS_URI}}" />
 </head>
 <body>
 
@@ -96,6 +96,10 @@
     <div id="tables-panel" class="tables-panel hidden">
       <div class="tables-header">
         <h3 id="tables-title">Tables</h3>
+        <div class="tables-filter-wrap search-wrap">
+          <input type="text" id="tables-filter" class="input" placeholder="Search tables…" autocomplete="off" />
+          <button id="btn-clear-tables-filter" class="btn-icon" title="Clear" style="display:none">✕</button>
+        </div>
         <button id="btn-close-tables" class="btn-icon" title="Close">✕</button>
       </div>
       <table class="pipeline-table" id="tables-table">
@@ -118,6 +122,6 @@
 
 </div>
 
-<script nonce="{{NONCE}}" src="{{JS_URI}}"></script>
+<script nonce="{{NONCE}}">{{JS_INLINE}}</script>
 </body>
 </html>

@@ -2,6 +2,15 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
+## [1.5.0] - 2026-05-22
+
+### Added
+- **Overview — table filter**: A "Filter tables…" input in the "Largest tables" section header lets you search the ranked list by table name (or `schema.table`) in real time; resets automatically when switching schema
+- **Overview — refresh size**: Each measured row now shows a ↻ button that re-triggers the size computation for that individual table on demand — useful after a Vacuum or data update. A ⏳ spinner replaces the button while the recomputation is in progress
+
+### Fixed
+- **Overview modal styling**: The modal layout (stat cards, schema pills, type badges, maintenance buttons) was broken due to smart/curly quotes (`"` `"`) in the generated HTML attributes — `querySelector` could not match any class, so no inline styles were applied. All occurrences have been replaced with straight ASCII quotes
+
 ## [1.4.2] - 2026-05-21
 
 ### Changed

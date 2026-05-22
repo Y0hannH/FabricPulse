@@ -1086,3 +1086,148 @@ body.col-resizing * { cursor: col-resize !important; }
   border-radius: 2px;
   color:       var(--fp-orange);
 }
+
+/* ── Tables panel filter ─────────────────────────────────────────────────────── */
+.tables-filter-wrap {
+  display:     flex;
+  align-items: center;
+  gap:         4px;
+  flex:        1;
+  max-width:   280px;
+  margin:      0 8px;
+}
+.tables-filter-wrap .input {
+  flex:      1;
+  height:    26px;
+  font-size: 12px;
+  padding:   3px 8px;
+}
+
+/* ── Overview modal ──────────────────────────────────────────────────────────── */
+.overview-modal {
+  width:          720px;
+  max-width:      94vw;
+  max-height:     88vh;
+  padding:        0;
+  display:        flex;
+  flex-direction: column;
+}
+.overview-modal-header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  padding:         14px 18px 10px;
+  border-bottom:   1px solid var(--fp-border);
+  flex-shrink:     0;
+}
+.overview-modal-header h3 {
+  margin:    0;
+  font-size: 14px;
+}
+.overview-body {
+  overflow-y: auto;
+  flex:       1;
+  padding:    0 0 8px;
+}
+.overview-loading {
+  padding:    24px;
+  text-align: center;
+  color:      var(--vscode-descriptionForeground);
+  font-size:  12px;
+}
+
+/* Stats row */
+.overview-stats {
+  display:       flex;
+  gap:           12px;
+  padding:       14px 18px 12px;
+  flex-wrap:     wrap;
+  border-bottom: 1px solid var(--fp-border);
+}
+.stat-card {
+  background:    var(--fp-bg-alt, rgba(255,255,255,0.04));
+  border:        1px solid var(--fp-border);
+  border-radius: 6px;
+  padding:       10px 16px;
+  min-width:     110px;
+  flex:          1;
+}
+.stat-value {
+  font-size:   20px;
+  font-weight: 600;
+  color:       var(--vscode-foreground);
+  line-height: 1.2;
+}
+.stat-label {
+  font-size:  11px;
+  color:      var(--vscode-descriptionForeground);
+  margin-top: 2px;
+}
+
+/* Sections */
+.overview-section {
+  padding:       12px 18px;
+  border-bottom: 1px solid var(--fp-border);
+}
+.overview-section:last-child { border-bottom: none; }
+.overview-section-header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  font-size:       12px;
+  font-weight:     600;
+  color:           var(--vscode-foreground);
+  margin-bottom:   8px;
+}
+
+/* Table wrap inside overview */
+.overview-table-wrap {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+/* Progress bar */
+.overview-progress-bar {
+  height:        4px;
+  background:    var(--fp-border);
+  border-radius: 2px;
+  overflow:      hidden;
+  margin-bottom: 4px;
+}
+.overview-progress-fill {
+  height:     100%;
+  background: var(--fp-blue, #4d9ce6);
+  transition: width 0.3s ease;
+}
+
+/* Maintenance health */
+.overview-health {
+  display:   flex;
+  gap:       20px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color:     var(--vscode-foreground);
+}
+
+/* Schema pills */
+.overview-schemas {
+  display:   flex;
+  flex-wrap: wrap;
+  gap:       6px;
+}
+.schema-pill {
+  background:    var(--fp-bg-alt, rgba(255,255,255,0.05));
+  border:        1px solid var(--fp-border);
+  border-radius: 12px;
+  padding:       2px 10px;
+  font-size:     11px;
+  color:         var(--vscode-foreground);
+  cursor:        pointer;
+  transition:    border-color 0.15s, background 0.15s;
+}
+.schema-pill:hover { border-color: var(--fp-blue); }
+.schema-pill-active {
+  background:   rgba(77,156,230,0.15);
+  border-color: var(--fp-blue);
+  color:        var(--fp-blue);
+}
