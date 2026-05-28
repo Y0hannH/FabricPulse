@@ -2,6 +2,11 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
+## [1.6.1] - 2026-05-28
+
+### Added
+- **Dashboard — "Open run monitoring" action**: New 📈 row action for data pipelines that opens the pipeline's run monitoring directly in Fabric, deep-linking to the most recent run — so you can jump straight to the logs of a failed run instead of navigating through Fabric's menus. Falls back to the pipeline editor for never-run pipelines
+
 ## [1.6.0] - 2026-05-28
 
 ### Added

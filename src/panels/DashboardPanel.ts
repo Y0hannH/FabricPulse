@@ -480,6 +480,10 @@ export class DashboardPanel {
         if (!isUuid(msg.pipelineId) || !isUuid(msg.workspaceId) || !isUuid(msg.tenantId)) return fail('bad UUID');
         break;
 
+      case 'viewMonitor':
+        if (!isUuid(msg.pipelineId) || !isUuid(msg.workspaceId)) return fail('bad pipelineId/workspaceId');
+        break;
+
       case 'viewHistory':
         if (!isUuid(msg.pipelineId) || !isUuid(msg.workspaceId)) return fail('bad pipelineId/workspaceId');
         if (typeof msg.pipelineName !== 'string' || msg.pipelineName.length > 256) return fail('bad pipelineName');
@@ -713,6 +717,18 @@ export class DashboardPanel {
         const isModel = (msg.itemType ?? 'pipeline') === 'semanticModel';
         const url = isModel
           ? `https://app.fabric.microsoft.com/groups/${msg.workspaceId}/semanticmodels/${msg.pipelineId}`
+          : `https://app.fabric.microsoft.com/groups/${msg.workspaceId}/pipelines/${msg.pipelineId}?experience=data-pipeline`;
+        await vscode.env.openExternal(vscode.Uri.parse(url));
+        break;
+      }
+
+      case 'viewMonitor': {
+        // UUIDs already validated by _validateMsg.
+        // Deep-link to the last run's monitoring view when we have a run id;
+        // fall back to the pipeline editor for never-run pipelines.
+        const runId = msg.runId && isUuid(msg.runId) ? msg.runId : undefined;
+        const url = runId
+          ? `https://app.fabric.microsoft.com/workloads/data-pipeline/monitoring/workspaces/${msg.workspaceId}/pipelines/${msg.pipelineId}/${runId}?experience=power-bi`
           : `https://app.fabric.microsoft.com/groups/${msg.workspaceId}/pipelines/${msg.pipelineId}?experience=data-pipeline`;
         await vscode.env.openExternal(vscode.Uri.parse(url));
         break;
