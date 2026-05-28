@@ -2,6 +2,11 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
+## [1.6.0] - 2026-05-28
+
+### Added
+- **Dashboard — "Next Run" column**: A new sortable column estimates when each pipeline or semantic model is next scheduled to run (e.g. `in 3h`, `in 2d`). It reads the Fabric job schedule (cron/daily/weekly) and the Power BI refresh schedule, then computes the next occurrence in the schedule's own time zone. Shows `paused` when a schedule is disabled and `—` when none is set; hover for the full schedule description
+
 ## [1.5.0] - 2026-05-22
 
 ### Added

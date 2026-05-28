@@ -203,6 +203,14 @@ function getVisible() {
         if (br == null) return -1;
         return (ar - br) * sort.dir;
       }
+      case 'nextrun': {
+        const at = a.nextRunAt ? new Date(a.nextRunAt).getTime() : null;
+        const bt = b.nextRunAt ? new Date(b.nextRunAt).getTime() : null;
+        if (at == null && bt == null) return 0;
+        if (at == null) return 1;  // items without a schedule sort last
+        if (bt == null) return -1;
+        return (at - bt) * sort.dir;
+      }
       default: return 0;
     }
   });
@@ -258,6 +266,8 @@ function buildRowHtml(/** @type {any} */ p) {
   const minDur = p.minDurationMs != null ? formatDuration(p.minDurationMs) : '—';
   const maxDur = p.maxDurationMs != null ? formatDuration(p.maxDurationMs) : '—';
 
+  const nextRunHtml = buildNextRunCell(p);
+
   const typeBadge = isModel
     ? `<span class="item-type-badge item-type-model" title="Semantic Model">Model</span>`
     : `<span class="item-type-badge item-type-pipeline" title="Data Pipeline">Pipeline</span>`;
@@ -296,6 +306,7 @@ function buildRowHtml(/** @type {any} */ p) {
       ? `<span class="status-badge status-${statusClass}">${esc(statusLabel)}</span><span class="time-ago muted">${esc(timeAgo)}</span>`
       : '<span class="muted">—</span>'}
   </td>
+  <td class="col-next-run" style="text-align:right">${nextRunHtml}</td>
   <td class="col-duration" style="text-align:right">${esc(duration)}</td>
   <td class="col-dur-avg muted" style="text-align:right" title="Avg duration (all runs)">${esc(avgDur)}</td>
   <td class="col-dur-min muted" style="text-align:right" title="Min duration (succeeded only)">${esc(minDur)}</td>
@@ -631,6 +642,29 @@ function formatIn(/** @type {string} */ iso) {
   if (mins < 60) return `in ${mins}m`;
   const h = Math.floor(mins / 60);
   return `in ${h}h`;
+}
+
+/** "Next Run in …" — like formatIn but extends past a day (e.g. weekly schedules). */
+function formatUntil(/** @type {string} */ iso) {
+  const diff = new Date(iso).getTime() - Date.now();
+  if (diff <= 0) return 'due';
+  const mins = Math.round(diff / 60_000);
+  if (mins < 60) return `in ${mins}m`;
+  const h = Math.round(mins / 60);
+  if (h < 48) return `in ${h}h`;
+  return `in ${Math.round(h / 24)}d`;
+}
+
+/** Renders the "Next Run" cell: relative time, "paused" for a disabled schedule, or "—". */
+function buildNextRunCell(/** @type {any} */ p) {
+  if (p.scheduleEnabled === false) {
+    return '<span class="next-paused muted" title="Schedule disabled">paused</span>';
+  }
+  if (p.nextRunAt) {
+    const title = p.scheduleSummary ? esc(p.scheduleSummary) : 'Next scheduled run';
+    return `<span class="next-run-in" title="${title}">${esc(formatUntil(p.nextRunAt))}</span>`;
+  }
+  return '<span class="muted">—</span>';
 }
 
 function formatDuration(/** @type {number} */ ms) {
