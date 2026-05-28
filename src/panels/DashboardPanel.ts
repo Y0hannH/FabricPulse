@@ -5,6 +5,7 @@ import * as crypto from 'crypto';
 import { FabricApiService } from '../services/fabricApi';
 import { StorageService } from '../services/storageService';
 import { AlertService } from '../services/alertService';
+import { ScheduleInfo } from '../services/scheduleService';
 import {
   Tenant,
   Workspace,
@@ -53,6 +54,10 @@ export class DashboardPanel {
   /** itemId → epoch ms of last live API fetch for runs.
    *  Cleared when the workspace or tenant changes so the first load is always live. */
   private _runsFetchedAt = new Map<string, number>();
+
+  /** itemId → last fetched schedule info. Kept across the cache/fetch phases of a
+   *  refresh so the "Next Run" column doesn't flicker; cleared on tenant/workspace change. */
+  private _schedulesById = new Map<string, ScheduleInfo>();
 
   // ─── Factory ────────────────────────────────────────────────────────────────
 
@@ -174,6 +179,7 @@ export class DashboardPanel {
               alertEnabled: fav?.alertEnabled ?? false,
               durationThresholdMs: fav?.durationThresholdMs,
               cachedRunCount: this._storage.getRunCount(p.id),
+              ...this._scheduleFields(p.id),
             };
           });
 
@@ -202,34 +208,46 @@ export class DashboardPanel {
             const batch = staleFavorites.slice(i, i + favBatchSize);
             await Promise.all(batch.map(async fav => {
               const item = this._pipelines.find(p => p.id === fav.pipelineId);
-              try {
-                const isModel = (fav.itemType ?? 'pipeline') === 'semanticModel';
-                const run = isModel
-                  ? await this._fabricApi.getLastSemanticModelRun(this._currentTenantId, fav.workspaceId, fav.pipelineId)
-                  : await this._fabricApi.getLastPipelineRun(this._currentTenantId, fav.workspaceId, fav.pipelineId);
-                if (run) {
-                  this._storage.upsertRunsBatch([{
-                    tenantId: this._currentTenantId,
-                    workspaceId: fav.workspaceId,
-                    pipelineId: fav.pipelineId,
-                    pipelineName: item?.displayName ?? fav.pipelineId,
-                    workspaceName: wsMap.get(fav.workspaceId)?.displayName ?? fav.workspaceId,
-                    runId: run.runId,
-                    status: run.status,
-                    startTime: run.startTime,
-                    endTime: run.endTime,
-                    durationMs: run.durationMs,
-                    errorMessage: run.errorMessage,
-                    itemType: fav.itemType ?? 'pipeline',
-                  }]);
-                  const idx = this._pipelines.findIndex(p => p.id === fav.pipelineId);
-                  if (idx !== -1) {
-                    this._pipelines[idx] = { ...this._pipelines[idx], lastRun: run };
+              const isModel = (fav.itemType ?? 'pipeline') === 'semanticModel';
+              let run: PipelineRun | undefined;
+
+              await Promise.all([
+                this._fetchSchedule({ id: fav.pipelineId, itemType: fav.itemType as 'pipeline' | 'semanticModel' | undefined }, fav.workspaceId),
+                (async () => {
+                  try {
+                    run = isModel
+                      ? await this._fabricApi.getLastSemanticModelRun(this._currentTenantId, fav.workspaceId, fav.pipelineId)
+                      : await this._fabricApi.getLastPipelineRun(this._currentTenantId, fav.workspaceId, fav.pipelineId);
+                    if (run) {
+                      this._storage.upsertRunsBatch([{
+                        tenantId: this._currentTenantId,
+                        workspaceId: fav.workspaceId,
+                        pipelineId: fav.pipelineId,
+                        pipelineName: item?.displayName ?? fav.pipelineId,
+                        workspaceName: wsMap.get(fav.workspaceId)?.displayName ?? fav.workspaceId,
+                        runId: run.runId,
+                        status: run.status,
+                        startTime: run.startTime,
+                        endTime: run.endTime,
+                        durationMs: run.durationMs,
+                        errorMessage: run.errorMessage,
+                        itemType: fav.itemType ?? 'pipeline',
+                      }]);
+                    }
+                    this._runsFetchedAt.set(fav.pipelineId, Date.now());
+                  } catch (err) {
+                    console.warn(`[FabricPulse] Could not fetch run for favorite ${fav.pipelineId}:`, err);
                   }
-                }
-                this._runsFetchedAt.set(fav.pipelineId, Date.now());
-              } catch (err) {
-                console.warn(`[FabricPulse] Could not fetch run for favorite ${fav.pipelineId}:`, err);
+                })(),
+              ]);
+
+              const idx = this._pipelines.findIndex(p => p.id === fav.pipelineId);
+              if (idx !== -1) {
+                this._pipelines[idx] = {
+                  ...this._pipelines[idx],
+                  ...(run ? { lastRun: run } : {}),
+                  ...this._scheduleFields(fav.pipelineId),
+                };
               }
             }));
           }
@@ -313,6 +331,7 @@ export class DashboardPanel {
               alertEnabled: fav?.alertEnabled ?? false,
               durationThresholdMs: fav?.durationThresholdMs,
               cachedRunCount: this._storage.getRunCount(p.id),
+              ...this._scheduleFields(p.id),
             },
           });
         }
@@ -349,34 +368,47 @@ export class DashboardPanel {
 
         const batch = staleMeta.slice(i, i + batchSize);
         await Promise.all(batch.map(async ({ pipeline, ws }) => {
-          try {
-            const isModel = pipeline.itemType === 'semanticModel';
-            const run = isModel
-              ? await this._fabricApi.getLastSemanticModelRun(this._currentTenantId, ws.id, pipeline.id)
-              : await this._fabricApi.getLastPipelineRun(this._currentTenantId, ws.id, pipeline.id);
-            if (run) {
-              this._storage.upsertRunsBatch([{
-                tenantId: this._currentTenantId,
-                workspaceId: ws.id,
-                pipelineId: pipeline.id,
-                pipelineName: pipeline.displayName,
-                workspaceName: ws.displayName,
-                runId: run.runId,
-                status: run.status,
-                startTime: run.startTime,
-                endTime: run.endTime,
-                durationMs: run.durationMs,
-                errorMessage: run.errorMessage,
-                itemType: pipeline.itemType ?? 'pipeline',
-              }]);
-              const idx = this._pipelines.findIndex(x => x.id === pipeline.id);
-              if (idx !== -1) {
-                this._pipelines[idx] = { ...this._pipelines[idx], lastRun: run };
+          const isModel = pipeline.itemType === 'semanticModel';
+          let run: PipelineRun | undefined;
+
+          // Runs and schedule are independent calls — fetch them concurrently.
+          await Promise.all([
+            this._fetchSchedule(pipeline, ws.id),
+            (async () => {
+              try {
+                run = isModel
+                  ? await this._fabricApi.getLastSemanticModelRun(this._currentTenantId, ws.id, pipeline.id)
+                  : await this._fabricApi.getLastPipelineRun(this._currentTenantId, ws.id, pipeline.id);
+                if (run) {
+                  this._storage.upsertRunsBatch([{
+                    tenantId: this._currentTenantId,
+                    workspaceId: ws.id,
+                    pipelineId: pipeline.id,
+                    pipelineName: pipeline.displayName,
+                    workspaceName: ws.displayName,
+                    runId: run.runId,
+                    status: run.status,
+                    startTime: run.startTime,
+                    endTime: run.endTime,
+                    durationMs: run.durationMs,
+                    errorMessage: run.errorMessage,
+                    itemType: pipeline.itemType ?? 'pipeline',
+                  }]);
+                }
+                this._runsFetchedAt.set(pipeline.id, Date.now());
+              } catch (err) {
+                console.warn(`[FabricPulse] Could not fetch runs for ${pipeline.itemType ?? 'pipeline'} ${pipeline.displayName}:`, err);
               }
-            }
-            this._runsFetchedAt.set(pipeline.id, Date.now());
-          } catch (err) {
-            console.warn(`[FabricPulse] Could not fetch runs for ${pipeline.itemType ?? 'pipeline'} ${pipeline.displayName}:`, err);
+            })(),
+          ]);
+
+          const idx = this._pipelines.findIndex(x => x.id === pipeline.id);
+          if (idx !== -1) {
+            this._pipelines[idx] = {
+              ...this._pipelines[idx],
+              ...(run ? { lastRun: run } : {}),
+              ...this._scheduleFields(pipeline.id),
+            };
           }
         }));
 
@@ -482,6 +514,7 @@ export class DashboardPanel {
 
       case 'refresh':
         this._runsFetchedAt.clear();
+        this._schedulesById.clear();
         await this.refresh(true);
         break;
 
@@ -491,12 +524,14 @@ export class DashboardPanel {
         this._pipelines = [];
         this._selectedWorkspaceId = '';
         this._runsFetchedAt.clear();
+        this._schedulesById.clear();
         await this.refresh();
         break;
 
       case 'selectWorkspace':
         this._selectedWorkspaceId = msg.workspaceId;
         this._runsFetchedAt.clear(); // force live fetch on first load of a workspace
+        this._schedulesById.clear();
         await this.refresh();
         break;
 
@@ -577,6 +612,10 @@ export class DashboardPanel {
             }]);
           }
           this._runsFetchedAt.set(msg.pipelineId, Date.now());
+          await this._fetchSchedule(
+            { id: msg.pipelineId, itemType: (msg.itemType ?? target.itemType) as 'pipeline' | 'semanticModel' | undefined },
+            msg.workspaceId,
+          );
           const { rate } = this._storage.getSuccessRate(msg.pipelineId, 7);
           const durStats = this._storage.getDurationStats(msg.pipelineId);
           const idx = this._pipelines.findIndex(p => p.id === msg.pipelineId);
@@ -588,6 +627,7 @@ export class DashboardPanel {
               avgDurationMs: durStats.avg,
               maxDurationMs: durStats.max,
               minDurationMs: durStats.min,
+              ...this._scheduleFields(msg.pipelineId),
             };
           }
           this._postState();
@@ -749,6 +789,31 @@ export class DashboardPanel {
         break;
       }
     }
+  }
+
+  // ─── Schedules ────────────────────────────────────────────────────────────
+
+  /** Fetches the schedule for an item and caches it. Non-fatal: on error it
+   *  keeps any previously cached value rather than clearing the column. */
+  private async _fetchSchedule(
+    item: { id: string; itemType?: 'pipeline' | 'semanticModel' },
+    workspaceId: string,
+  ): Promise<void> {
+    try {
+      const isModel = (item.itemType ?? 'pipeline') === 'semanticModel';
+      const info = isModel
+        ? await this._fabricApi.getSemanticModelSchedule(this._currentTenantId, workspaceId, item.id)
+        : await this._fabricApi.getPipelineSchedule(this._currentTenantId, workspaceId, item.id);
+      if (info !== undefined) this._schedulesById.set(item.id, info);
+    } catch (err) {
+      console.warn(`[FabricPulse] schedule fetch failed for ${item.id}:`, err);
+    }
+  }
+
+  /** Schedule-derived fields for a pipeline row, read from the in-memory cache. */
+  private _scheduleFields(itemId: string): Pick<PipelineWithStatus, 'nextRunAt' | 'scheduleSummary' | 'scheduleEnabled'> {
+    const s = this._schedulesById.get(itemId);
+    return { nextRunAt: s?.nextRunAt, scheduleSummary: s?.summary, scheduleEnabled: s?.enabled };
   }
 
   // ─── State ──────────────────────────────────────────────────────────────────

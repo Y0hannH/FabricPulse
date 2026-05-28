@@ -1,6 +1,7 @@
 import fetch from 'node-fetch';
 import { AuthService, POWERBI_SCOPE, ONELAKE_SCOPE } from './authService';
 import { Workspace, Pipeline, PipelineRun, RunStatus, Lakehouse, LakehouseTable } from '../models/types';
+import { ScheduleDef, ScheduleInfo, combineSchedules } from './scheduleService';
 
 const BASE_URL = 'https://api.fabric.microsoft.com/v1';
 const POWERBI_BASE_URL = 'https://api.powerbi.com/v1.0/myorg';
@@ -509,6 +510,99 @@ export class FabricApiService {
     } catch {
       return 'triggered';
     }
+  }
+
+  // ─── Schedules ────────────────────────────────────────────────────────────
+
+  /** Fetches the job schedules for a data pipeline and computes the next run.
+   *  GET /workspaces/{wsId}/items/{itemId}/jobs/Pipeline/schedules
+   *  Returns undefined when the pipeline has no schedule (or on a non-fatal error). */
+  async getPipelineSchedule(tenantId: string, workspaceId: string, pipelineId: string): Promise<ScheduleInfo | undefined> {
+    assertUuids(workspaceId, pipelineId);
+    interface RawSchedule {
+      id: string;
+      enabled: boolean;
+      configuration?: {
+        type?: string;
+        interval?: number;
+        times?: string[];
+        weekdays?: string[];
+        startDateTime?: string;
+        endDateTime?: string;
+        localTimeZoneId?: string;
+      };
+    }
+    const path = `/workspaces/${workspaceId}/items/${pipelineId}/jobs/Pipeline/schedules`;
+    let data: FabricListResponse<RawSchedule>;
+    try {
+      data = await this.request<FabricListResponse<RawSchedule>>(tenantId, path);
+    } catch (err) {
+      console.warn(`[FabricPulse] Could not fetch schedule for pipeline ${pipelineId}:`, err);
+      return undefined;
+    }
+
+    const defs: ScheduleDef[] = (data.value ?? [])
+      .filter(s => s.configuration?.type)
+      .map(s => ({
+        enabled: !!s.enabled,
+        type: s.configuration!.type as ScheduleDef['type'],
+        interval: s.configuration!.interval,
+        times: s.configuration!.times,
+        weekdays: s.configuration!.weekdays,
+        startDateTime: s.configuration!.startDateTime,
+        endDateTime: s.configuration!.endDateTime,
+        localTimeZoneId: s.configuration!.localTimeZoneId,
+      }));
+
+    return combineSchedules(defs);
+  }
+
+  /** Fetches the Power BI refresh schedule for a semantic model and computes
+   *  the next run. GET /groups/{wsId}/datasets/{modelId}/refreshSchedule
+   *  Returns undefined when no schedule is configured (404) or on a non-fatal error. */
+  async getSemanticModelSchedule(tenantId: string, workspaceId: string, modelId: string): Promise<ScheduleInfo | undefined> {
+    assertUuids(workspaceId, modelId);
+    const token = await this.auth.getToken(tenantId, POWERBI_SCOPE);
+    const url = `${POWERBI_BASE_URL}/groups/${workspaceId}/datasets/${modelId}/refreshSchedule`;
+
+    let response: import('node-fetch').Response;
+    try {
+      response = await fetchWithRetry(
+        () => fetch(url, { headers: { 'Authorization': `Bearer ${token}` }, timeout: FETCH_TIMEOUT_MS }),
+        '[PBI] /groups/.../datasets/.../refreshSchedule',
+      );
+    } catch (err) {
+      console.warn(`[FabricPulse] Could not fetch refresh schedule for model ${modelId}:`, err);
+      return undefined;
+    }
+
+    // 404 — no scheduled refresh configured (common, and the case for DirectQuery models)
+    if (response.status === 404) return undefined;
+    if (!response.ok) {
+      if (response.status === 401) this.auth.clearCredential(tenantId);
+      return undefined; // non-fatal — schedule is a best-effort enrichment
+    }
+
+    let data: { days?: string[]; times?: string[]; enabled?: boolean; localTimeZoneId?: string };
+    try {
+      data = await response.json() as typeof data;
+    } catch {
+      return undefined;
+    }
+
+    if (!data.days || data.days.length === 0) {
+      // Schedule exists but has no days — surface "disabled" if explicitly off, else nothing.
+      return data.enabled === false ? { enabled: false, summary: 'Refresh schedule disabled' } : undefined;
+    }
+
+    const def: ScheduleDef = {
+      enabled: data.enabled ?? true,
+      type: 'Weekly',
+      weekdays: data.days,
+      times: data.times && data.times.length ? data.times : ['00:00'],
+      localTimeZoneId: data.localTimeZoneId,
+    };
+    return combineSchedules([def]);
   }
 
   // ─── Lakehouse API ──────────────────────────────────────────────────────────

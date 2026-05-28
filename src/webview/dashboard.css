@@ -521,12 +521,16 @@ body.col-resizing * { cursor: col-resize !important; }
 .col-name         { width: 26%;   }
 .col-workspace    { width: 18%;   }
 .col-status       { width: 16%;   }
+.col-next-run     { width: 84px;  text-align: right; }
 .col-duration     { width: 72px;  text-align: right; }
 .col-dur-avg      { width: 62px;  text-align: right; color: var(--vscode-descriptionForeground); }
 .col-dur-min      { width: 62px;  text-align: right; color: var(--vscode-descriptionForeground); }
 .col-dur-max      { width: 62px;  text-align: right; color: var(--vscode-descriptionForeground); }
 .col-rate         { width: 68px;  text-align: right; }
 .col-runs         { width: 56px;  text-align: right; color: var(--vscode-descriptionForeground); }
+
+.next-run-in      { color: var(--vscode-textLink-foreground); }
+.next-paused      { font-style: italic; }
 
 /* ── Lakehouse-specific columns ─────────────────────────────────────────────── */
 .col-sql-status   { width: 110px; }

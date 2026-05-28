@@ -47,6 +47,9 @@ export interface PipelineWithStatus extends Pipeline {
   alertEnabled: boolean;
   durationThresholdMs?: number;
   cachedRunCount?: number;
+  nextRunAt?: string;        // ISO-8601 UTC of the next scheduled run (computed)
+  scheduleSummary?: string;  // human-readable schedule description (tooltip)
+  scheduleEnabled?: boolean; // false when a schedule exists but is paused
 }
 
 // ─── Storage models ───────────────────────────────────────────────────────────
