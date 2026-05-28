@@ -295,6 +295,7 @@ function buildRowHtml(/** @type {any} */ p) {
         <button class="action-btn" data-action="rerun"            title="${rerunTitle}">${rerunIcon}</button>
         <button class="action-btn ${!runId ? 'disabled' : ''}"   data-action="copy"    title="Copy Run ID">📋</button>
         <button class="action-btn" data-action="portal"           title="Open in Fabric portal">🔗</button>
+        ${!isModel ? '<button class="action-btn" data-action="monitor" title="Open run monitoring in Fabric">📈</button>' : ''}
         <button class="action-btn" data-action="history"          title="View full history">📊</button>
       </div>
       <span class="pipeline-name" title="${esc(p.displayName)}">${esc(p.displayName)}</span>
@@ -362,6 +363,10 @@ function handleRowClick(/** @type {MouseEvent} */ e) {
 
     case 'portal':
       post({ type: 'openInFabric', pipelineId: pid, workspaceId: wsid, tenantId: state.currentTenantId, itemType: itype });
+      break;
+
+    case 'monitor':
+      post({ type: 'viewMonitor', pipelineId: pid, workspaceId: wsid, runId, itemType: itype });
       break;
 
     case 'history':

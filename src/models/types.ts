@@ -209,6 +209,7 @@ export type WebviewToExtMsg =
   | { type: 'refreshPipeline'; pipelineId: string; workspaceId: string; itemType?: ItemType }
   | { type: 'copyRunId'; runId: string }
   | { type: 'openInFabric'; pipelineId: string; workspaceId: string; tenantId: string; itemType?: ItemType }
+  | { type: 'viewMonitor'; pipelineId: string; workspaceId: string; runId?: string; itemType?: ItemType }
   | { type: 'viewHistory'; pipelineId: string; workspaceId: string; pipelineName: string; workspaceName: string; itemType?: ItemType }
   | { type: 'addTenant' }
   | { type: 'exportHistory'; pipelineId: string }
