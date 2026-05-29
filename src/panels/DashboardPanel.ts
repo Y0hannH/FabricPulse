@@ -514,7 +514,10 @@ export class DashboardPanel {
     switch (msg.type) {
 
       case 'ready':
-        await this.refresh();
+        // Force a live refresh on first open: this acquires the auth token and
+        // fetches fresh runs immediately. Phase 1 still paints cached rows first,
+        // so the UI stays fast while live data streams in — no manual click needed.
+        await this.refresh(true);
         break;
 
       case 'refresh':
@@ -597,40 +600,7 @@ export class DashboardPanel {
         if (!target) break;
         try {
           const itemType = (msg.itemType ?? target.itemType) as ItemType | undefined;
-          const run = await this._fetchLastRun(msg.workspaceId, msg.pipelineId, itemType);
-          if (run) {
-            this._storage.upsertRunsBatch([{
-              tenantId: this._currentTenantId,
-              workspaceId: msg.workspaceId,
-              pipelineId: msg.pipelineId,
-              pipelineName: target.displayName,
-              workspaceName: target.workspaceName,
-              runId: run.runId,
-              status: run.status,
-              startTime: run.startTime,
-              endTime: run.endTime,
-              durationMs: run.durationMs,
-              errorMessage: run.errorMessage,
-              itemType: target.itemType ?? 'pipeline',
-            }]);
-          }
-          this._runsFetchedAt.set(msg.pipelineId, Date.now());
-          await this._fetchSchedule({ id: msg.pipelineId, itemType }, msg.workspaceId);
-          const { rate } = this._storage.getSuccessRate(msg.pipelineId, 7);
-          const durStats = this._storage.getDurationStats(msg.pipelineId);
-          const idx = this._pipelines.findIndex(p => p.id === msg.pipelineId);
-          if (idx !== -1) {
-            this._pipelines[idx] = {
-              ...this._pipelines[idx],
-              lastRun: run,
-              successRate7d: rate,
-              avgDurationMs: durStats.avg,
-              maxDurationMs: durStats.max,
-              minDurationMs: durStats.min,
-              ...this._scheduleFields(msg.pipelineId),
-            };
-          }
-          this._postState();
+          await this._refreshItemLastRun(msg.workspaceId, msg.pipelineId, itemType);
         } catch (err: unknown) {
           this._post({ type: 'toast', message: err instanceof Error ? err.message : String(err), level: 'error' });
         }
@@ -689,8 +659,9 @@ export class DashboardPanel {
           await this._triggerItem(msg.workspaceId, msg.pipelineId, itemType);
           const verb = itemType === 'semanticModel' ? 'refresh triggered' : 'triggered';
           this._post({ type: 'toast', message: `"${pipeline?.displayName ?? msg.pipelineId}" ${verb}`, level: 'success' });
-          // Refresh after short delay so the new run appears
-          setTimeout(() => this.refresh(), 3000);
+          // Targeted, staged refresh of just this item so the new run's status
+          // appears within ~30s instead of waiting for the next polling cycle.
+          this._schedulePostTriggerRefresh(msg.workspaceId, msg.pipelineId, itemType);
         } catch (err: unknown) {
           this._post({ type: 'toast', message: err instanceof Error ? err.message : String(err), level: 'error' });
         }
@@ -829,6 +800,75 @@ export class DashboardPanel {
       case 'semanticModel': return this._fabricApi.triggerSemanticModelRefresh(this._currentTenantId, workspaceId, itemId);
       case 'notebook':      return this._fabricApi.triggerNotebook(this._currentTenantId, workspaceId, itemId);
       default:              return this._fabricApi.triggerPipeline(this._currentTenantId, workspaceId, itemId);
+    }
+  }
+
+  /** Re-fetches the most recent run for a single item, persists it, and updates
+   *  that row in place (last run, success rate, duration stats, schedule).
+   *  Used by the manual "refresh last run" action and by the staged
+   *  post-trigger refresh. Throws on API error so callers can decide whether
+   *  to surface it. */
+  private async _refreshItemLastRun(
+    workspaceId: string,
+    itemId: string,
+    itemType?: ItemType,
+  ): Promise<void> {
+    const target = this._pipelines.find(p => p.id === itemId);
+    if (!target) return; // item no longer in view (tenant/workspace changed)
+
+    const type = itemType ?? target.itemType;
+    const run = await this._fetchLastRun(workspaceId, itemId, type);
+    if (run) {
+      this._storage.upsertRunsBatch([{
+        tenantId: this._currentTenantId,
+        workspaceId,
+        pipelineId: itemId,
+        pipelineName: target.displayName,
+        workspaceName: target.workspaceName,
+        runId: run.runId,
+        status: run.status,
+        startTime: run.startTime,
+        endTime: run.endTime,
+        durationMs: run.durationMs,
+        errorMessage: run.errorMessage,
+        itemType: type ?? 'pipeline',
+      }]);
+    }
+    this._runsFetchedAt.set(itemId, Date.now());
+    await this._fetchSchedule({ id: itemId, itemType: type }, workspaceId);
+
+    const { rate } = this._storage.getSuccessRate(itemId, 7);
+    const durStats = this._storage.getDurationStats(itemId);
+    const idx = this._pipelines.findIndex(p => p.id === itemId);
+    if (idx !== -1) {
+      this._pipelines[idx] = {
+        ...this._pipelines[idx],
+        ...(run ? { lastRun: run } : {}),
+        successRate7d: rate,
+        avgDurationMs: durStats.avg,
+        maxDurationMs: durStats.max,
+        minDurationMs: durStats.min,
+        cachedRunCount: this._storage.getRunCount(itemId),
+        ...this._scheduleFields(itemId),
+      };
+    }
+    this._postState();
+  }
+
+  /** Schedules a few targeted re-fetches of an item's last run after it was
+   *  triggered, so the new run's status shows up without waiting for the next
+   *  polling cycle. Each tick is non-fatal and skipped if the panel is gone. */
+  private _schedulePostTriggerRefresh(workspaceId: string, itemId: string, itemType?: ItemType): void {
+    // First tick catches the run starting (Queued/InProgress); later ticks
+    // catch the final status. A pipeline/notebook run rarely appears instantly.
+    const delaysMs = [8_000, 30_000];
+    for (const delay of delaysMs) {
+      setTimeout(() => {
+        if (this._disposed) return;
+        this._refreshItemLastRun(workspaceId, itemId, itemType).catch(err =>
+          console.warn(`[FabricPulse] post-trigger refresh failed for ${itemId}:`, err),
+        );
+      }, delay);
     }
   }
 
