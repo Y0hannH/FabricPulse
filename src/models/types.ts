@@ -1,6 +1,6 @@
 // ─── Domain models ───────────────────────────────────────────────────────────
 
-export type ItemType = 'pipeline' | 'semanticModel';
+export type ItemType = 'pipeline' | 'semanticModel' | 'notebook';
 
 export interface Tenant {
   id: string;       // same as tenantId, used as key
@@ -21,7 +21,7 @@ export interface Pipeline {
   workspaceId: string;
   workspaceName: string;
   tenantId: string;
-  itemType?: ItemType; // 'pipeline' (default) | 'semanticModel'
+  itemType?: ItemType; // 'pipeline' (default) | 'semanticModel' | 'notebook'
 }
 
 export type RunStatus = 'Succeeded' | 'Failed' | 'InProgress' | 'Cancelled' | 'Queued' | 'NotStarted';
@@ -68,7 +68,7 @@ export interface StoredRun {
   durationMs?: number;
   errorMessage?: string;
   createdAt?: string;
-  itemType?: string; // 'pipeline' (default) | 'semanticModel'
+  itemType?: string; // 'pipeline' (default) | 'semanticModel' | 'notebook'
 }
 
 export interface Annotation {
@@ -86,7 +86,7 @@ export interface Favorite {
   pipelineId: string;
   alertEnabled: boolean;
   durationThresholdMs?: number;
-  itemType?: string; // 'pipeline' (default) | 'semanticModel'
+  itemType?: string; // 'pipeline' (default) | 'semanticModel' | 'notebook'
 }
 
 // ─── Lakehouse models ────────────────────────────────────────────────────────

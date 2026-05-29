@@ -25,7 +25,7 @@ const localFilter = {
   text: '',
   favoritesOnly: false,
   statusFilters: /** @type {Set<string>} */ (new Set()),
-  itemType: 'all', // 'all' | 'pipeline' | 'semanticModel'
+  itemType: 'all', // 'all' | 'pipeline' | 'semanticModel' | 'notebook'
 };
 
 /** Whether we have already applied the default favorites-filter on first real data load */
@@ -256,7 +256,10 @@ function buildRowHtml(/** @type {any} */ p) {
   const timeAgo = run?.startTime ? formatRelative(run.startTime) : '';
   const duration = run?.durationMs != null ? formatDuration(run.durationMs) : '—';
   const runId = run?.runId ?? '';
-  const isModel = (p.itemType ?? 'pipeline') === 'semanticModel';
+  const itype = p.itemType ?? 'pipeline';
+  const isModel = itype === 'semanticModel';
+  const isNotebook = itype === 'notebook';
+  const isPipeline = itype === 'pipeline';
 
   const rate = p.successRate7d;
   const rateCls = rate == null ? '' : rate >= 90 ? 'rate-high' : rate >= 70 ? 'rate-mid' : 'rate-low';
@@ -270,9 +273,11 @@ function buildRowHtml(/** @type {any} */ p) {
 
   const typeBadge = isModel
     ? `<span class="item-type-badge item-type-model" title="Semantic Model">Model</span>`
-    : `<span class="item-type-badge item-type-pipeline" title="Data Pipeline">Pipeline</span>`;
+    : isNotebook
+      ? `<span class="item-type-badge item-type-notebook" title="Notebook">Notebook</span>`
+      : `<span class="item-type-badge item-type-pipeline" title="Data Pipeline">Pipeline</span>`;
 
-  const rerunTitle = isModel ? 'Trigger refresh' : 'Re-run pipeline';
+  const rerunTitle = isModel ? 'Trigger refresh' : isNotebook ? 'Run notebook' : 'Re-run pipeline';
   const rerunIcon = isModel ? '⟳' : '▶';
 
   return `
@@ -295,7 +300,7 @@ function buildRowHtml(/** @type {any} */ p) {
         <button class="action-btn" data-action="rerun"            title="${rerunTitle}">${rerunIcon}</button>
         <button class="action-btn ${!runId ? 'disabled' : ''}"   data-action="copy"    title="Copy Run ID">📋</button>
         <button class="action-btn" data-action="portal"           title="Open in Fabric portal">🔗</button>
-        ${!isModel ? '<button class="action-btn" data-action="monitor" title="Open run monitoring in Fabric">📈</button>' : ''}
+        ${isPipeline ? '<button class="action-btn" data-action="monitor" title="Open run monitoring in Fabric">📈</button>' : ''}
         <button class="action-btn" data-action="history"          title="View full history">📊</button>
       </div>
       <span class="pipeline-name" title="${esc(p.displayName)}">${esc(p.displayName)}</span>
@@ -333,7 +338,7 @@ function handleRowClick(/** @type {MouseEvent} */ e) {
   const pname  = tr.dataset.pname ?? '';
   const wname  = tr.dataset.wsname ?? '';
   const runId  = tr.dataset.runid ?? '';
-  const itype  = /** @type {'pipeline'|'semanticModel'} */ (tr.dataset.itype ?? 'pipeline');
+  const itype  = /** @type {'pipeline'|'semanticModel'|'notebook'} */ (tr.dataset.itype ?? 'pipeline');
 
   switch (btn.dataset.action) {
     case 'star':
@@ -354,7 +359,7 @@ function handleRowClick(/** @type {MouseEvent} */ e) {
 
     case 'rerun':
       post({ type: 'rerunPipeline', pipelineId: pid, workspaceId: wsid, itemType: itype });
-      showToast(itype === 'semanticModel' ? `Triggering refresh for "${pname}"…` : `Triggering "${pname}"…`, 'info');
+      showToast(itype === 'semanticModel' ? `Triggering refresh for "${pname}"…` : `Running "${pname}"…`, 'info');
       break;
 
     case 'copy':

@@ -339,6 +339,11 @@ button { cursor: pointer; font-family: inherit; font-size: inherit; }
   color:        var(--fp-purple);
   border-color: var(--fp-purple);
 }
+.type-filter-btn[data-itype="notebook"].active {
+  background:   rgba(78,201,176,0.15);
+  color:        var(--fp-green);
+  border-color: var(--fp-green);
+}
 
 /* ── Item type badges ────────────────────────────────────────────────────────── */
 .item-type-badge {
@@ -357,6 +362,10 @@ button { cursor: pointer; font-family: inherit; font-size: inherit; }
 .item-type-model {
   background: rgba(177,128,215,0.12);
   color:      var(--fp-purple);
+}
+.item-type-notebook {
+  background: rgba(78,201,176,0.12);
+  color:      var(--fp-green);
 }
 
 /* ── Buttons ─────────────────────────────────────────────────────────────────── */
