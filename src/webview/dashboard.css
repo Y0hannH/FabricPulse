@@ -527,6 +527,7 @@ body.col-resizing * { cursor: col-resize !important; }
 /* ── Column widths ───────────────────────────────────────────────────────────── */
 .col-star         { width: 28px;  text-align: center; }
 .col-type         { width: 64px;  text-align: center; }
+.col-actions      { width: 188px; }
 .col-name         { width: 26%;   }
 .col-workspace    { width: 18%;   }
 .col-status       { width: 16%;   }
@@ -694,24 +695,16 @@ body.col-resizing * { cursor: col-resize !important; }
 .rate-mid  { color: var(--fp-orange); }
 .rate-low  { color: var(--fp-red); }
 
-/* ── Name cell with inline actions ───────────────────────────────────────────── */
-.name-cell {
-  display:     flex;
-  align-items: center;
-  gap:         2px;
-  min-width:   0;
-  overflow:    hidden;
-}
-
+/* ── Item name ───────────────────────────────────────────────────────────────── */
 .pipeline-name {
-  flex:          1;
+  display:       block;
   overflow:      hidden;
   text-overflow: ellipsis;
   white-space:   nowrap;
   min-width:     0;
 }
 
-/* ── Quick actions ───────────────────────────────────────────────────────────── */
+/* ── Quick actions (dedicated column) ────────────────────────────────────────── */
 .actions {
   display:     flex;
   align-items: center;
@@ -720,6 +713,10 @@ body.col-resizing * { cursor: col-resize !important; }
   visibility:  hidden;
   opacity:     0;
   transition:  opacity 0.1s;
+}
+.action-btn.invisible {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .action-btn {

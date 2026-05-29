@@ -292,19 +292,19 @@ function buildRowHtml(/** @type {any} */ p) {
     </button>
   </td>
   <td class="col-type">${typeBadge}</td>
-  <td class="col-name">
-    <div class="name-cell">
-      <div class="actions">
-        <button class="action-btn" data-action="refresh-pipeline"  title="Refresh last run">↺</button>
-        <button class="action-btn" data-action="fetch-history"    title="Fetch full history">⬇</button>
-        <button class="action-btn" data-action="rerun"            title="${rerunTitle}">${rerunIcon}</button>
-        <button class="action-btn ${!runId ? 'disabled' : ''}"   data-action="copy"    title="Copy Run ID">📋</button>
-        <button class="action-btn" data-action="portal"           title="Open in Fabric portal">🔗</button>
-        ${isPipeline ? '<button class="action-btn" data-action="monitor" title="Open run monitoring in Fabric">📈</button>' : ''}
-        <button class="action-btn" data-action="history"          title="View full history">📊</button>
-      </div>
-      <span class="pipeline-name" title="${esc(p.displayName)}">${esc(p.displayName)}</span>
+  <td class="col-actions">
+    <div class="actions">
+      <button class="action-btn" data-action="refresh-pipeline"  title="Refresh last run">↺</button>
+      <button class="action-btn" data-action="fetch-history"    title="Fetch full history">⬇</button>
+      <button class="action-btn" data-action="rerun"            title="${rerunTitle}">${rerunIcon}</button>
+      <button class="action-btn ${!runId ? 'disabled' : ''}"   data-action="copy"    title="Copy Run ID">📋</button>
+      <button class="action-btn" data-action="portal"           title="Open in Fabric portal">🔗</button>
+      <button class="action-btn ${isPipeline ? '' : 'invisible'}" data-action="monitor" title="Open run monitoring in Fabric" ${isPipeline ? '' : 'tabindex="-1" aria-hidden="true"'}>📈</button>
+      <button class="action-btn" data-action="history"          title="View full history">📊</button>
     </div>
+  </td>
+  <td class="col-name">
+    <span class="pipeline-name" title="${esc(p.displayName)}">${esc(p.displayName)}</span>
   </td>
   <td class="col-workspace muted" title="${esc(p.workspaceName)}">${esc(p.workspaceName)}</td>
   <td class="col-status">
