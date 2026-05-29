@@ -3,7 +3,7 @@
 > Real-time pulse of your Microsoft Fabric pipelines — right inside VS Code.
 
 ![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.85-007ACC?style=flat-square&logo=visualstudiocode)
-![Version](https://img.shields.io/badge/Version-1.7.0-blue?style=flat-square)
+![Version](https://img.shields.io/badge/Version-1.8.0-blue?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-00B4D8?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-In%20Development-orange?style=flat-square)
 
@@ -36,6 +36,7 @@ You choose which pipelines matter. FabricPulse watches them, stores their histor
 | 🔢 | **Total Executions** | Total run count displayed per pipeline to gauge execution frequency |
 | 🚀 | **Smart Loading** | Priority loading for favorites, configurable batching, instant cache on startup |
 | 🚫 | **Workspace Blacklist** | Exclude workspaces from polling (by ID or name) to reduce noise |
+| 📖 | **Documentation** | Built-in documentation page covering every feature and setting — open from the sidebar or command palette |
 
 ---
 
@@ -88,6 +89,7 @@ npm run compile
 |---|---|
 | `fabricPulse.openDashboard` | Open the main dashboard |
 | `fabricPulse.openLakehouses` | Open the Lakehouse panel |
+| `fabricPulse.openDocumentation` | Open the built-in documentation page |
 | `fabricPulse.addTenant` | Add an Azure tenant |
 | `fabricPulse.exportHistory` | Export CSV history for the selected pipeline |
 | `fabricPulse.clearHistory` | Clear local history |

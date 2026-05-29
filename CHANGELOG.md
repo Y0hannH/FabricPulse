@@ -2,6 +2,25 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
+## [1.8.0] - 2026-05-29
+
+### Added
+- **In-editor documentation**: New "Open Documentation" command and sidebar button open a dedicated page documenting every feature (dashboard, item types, quick actions, history, lakehouses, alerts, workspaces) and all configuration settings — replacing the old in-dashboard help modal
+
+### Changed
+- **Dashboard — actions column**: Row action buttons moved out of the name cell into a dedicated, fixed-width column placed before the name. This keeps pipeline, semantic model and notebook names aligned regardless of the pipeline-only "Open run monitoring" button
+- **Live refresh on open**: The dashboard now performs a live refresh as soon as it opens (acquiring a token if needed) instead of waiting for a manual Refresh click
+- **Refresh after trigger**: Triggering a run (pipeline re-run, notebook run, model refresh) now automatically refreshes that item's last run a few seconds later, so the new status appears immediately instead of waiting for the next poll
+
+### Removed
+- **In-dashboard help modal**: The toolbar `?` help button and its modal were removed in favor of the new Documentation page
+
+## [1.7.0] - 2026-05-28
+
+### Added
+- **Notebooks**: Fabric Notebooks are now monitored in the main dashboard alongside pipelines and semantic models — runs, durations, statuses, schedule-based "Next Run", favorites, and history. Trigger on-demand runs (`RunNotebook` job) and use the same quick actions as pipelines
+- **Unified type filter**: The dashboard type pills (All / Pipeline / Model / Notebook) filter by item type across all three kinds of items
+
 ## [1.6.1] - 2026-05-28
 
 ### Added
