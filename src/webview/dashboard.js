@@ -49,9 +49,6 @@ const dom = {
   clearFilter:       $('btn-clear-filter'),
   favoritesOnly:     /** @type {HTMLInputElement}  */ ($('favorites-only')),
   lastRefreshed:     $('last-refreshed'),
-  btnHelp:           $('btn-help'),
-  helpOverlay:       $('help-overlay'),
-  btnHelpClose:      $('btn-help-close'),
   btnRefresh:        $('btn-refresh'),
   btnAddTenant:      $('btn-add-tenant'),
   loadingBar:        $('loading-bar'),
@@ -588,17 +585,6 @@ dom.btnAddTenant.addEventListener('click', () => {
 
 $('btn-empty-add-tenant')?.addEventListener('click', () => {
   post({ type: 'addTenant' });
-});
-
-// ── Help modal ─────────────────────────────────────────────────────────────
-dom.btnHelp.addEventListener('click', () => {
-  dom.helpOverlay.classList.remove('hidden');
-});
-dom.btnHelpClose.addEventListener('click', () => {
-  dom.helpOverlay.classList.add('hidden');
-});
-dom.helpOverlay.addEventListener('click', (e) => {
-  if (e.target === dom.helpOverlay) dom.helpOverlay.classList.add('hidden');
 });
 
 // ── Type filter buttons ───────────────────────────────────────────────────────
