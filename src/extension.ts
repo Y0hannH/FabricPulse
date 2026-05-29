@@ -146,7 +146,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           workspaceId: lastRun.workspaceId,
           workspaceName: lastRun.workspaceName,
           tenantId: lastRun.tenantId,
-          itemType: (lastRun.itemType as 'pipeline' | 'semanticModel') ?? 'pipeline',
+          itemType: (lastRun.itemType as import('./models/types').ItemType) ?? 'pipeline',
         }, _storage);
       } else if (DashboardPanel.currentPanel) {
         // Fallback: refresh the dashboard if we can't find the pipeline in storage

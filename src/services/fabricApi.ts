@@ -388,6 +388,19 @@ export class FabricApiService {
     }));
   }
 
+  async getNotebooks(tenantId: string, workspaceId: string): Promise<Pipeline[]> {
+    assertUuids(workspaceId);
+    const items = await this.listAll<FabricPipeline>(tenantId, `/workspaces/${workspaceId}/notebooks`);
+    return items.map(p => ({
+      id: p.id,
+      displayName: p.displayName,
+      workspaceId,
+      workspaceName: '',
+      tenantId,
+      itemType: 'notebook' as const,
+    }));
+  }
+
   // ─── Pipeline runs (Fabric jobs/instances) ────────────────────────────────
 
   async getPipelineRuns(
@@ -441,6 +454,69 @@ export class FabricApiService {
     }
 
     // 202 Accepted — body may contain the job instance id or be empty
+    try {
+      const body = await response.json() as { id?: string };
+      return body.id ?? 'triggered';
+    } catch {
+      return 'triggered';
+    }
+  }
+
+  // ─── Notebook runs (Fabric jobs/instances) ────────────────────────────────
+
+  /** Full run history for a notebook. Notebooks expose their Spark job runs
+   *  through the generic items jobs/instances endpoint (same shape as pipelines). */
+  async getNotebookRuns(
+    tenantId: string,
+    workspaceId: string,
+    notebookId: string,
+  ): Promise<PipelineRun[]> {
+    assertUuids(workspaceId, notebookId);
+    const path = `/workspaces/${workspaceId}/items/${notebookId}/jobs/instances`;
+    const items = await this.listAll<FabricRun>(tenantId, path);
+    return this._mapRuns(items, notebookId);
+  }
+
+  /** Fetches only the first page of notebook runs and returns the most recent one. */
+  async getLastNotebookRun(
+    tenantId: string,
+    workspaceId: string,
+    notebookId: string,
+  ): Promise<PipelineRun | undefined> {
+    assertUuids(workspaceId, notebookId);
+    const path = `/workspaces/${workspaceId}/items/${notebookId}/jobs/instances`;
+    const data = await this.request<FabricListResponse<FabricRun>>(tenantId, path);
+    const items = data.value ?? [];
+    if (items.length === 0) return undefined;
+    return this._mapRuns(items, notebookId)[0];
+  }
+
+  /** Triggers an on-demand notebook run. Returns the new job instance ID
+   *  (or 'triggered' when the API returns 202 with no body). */
+  async triggerNotebook(tenantId: string, workspaceId: string, notebookId: string): Promise<string> {
+    assertUuids(workspaceId, notebookId);
+    const token = await this.auth.getToken(tenantId);
+    const path = `/workspaces/${workspaceId}/items/${notebookId}/jobs/instances?jobType=RunNotebook`;
+    const url = `${BASE_URL}${path}`;
+
+    const response = await fetchWithRetry(
+      () => fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+        timeout: FETCH_TIMEOUT_MS,
+      }),
+      path.split('?')[0],
+    );
+
+    if (!response.ok) {
+      if (response.status === 401) this.auth.clearCredential(tenantId);
+      throw new Error(`Fabric API error ${response.status} on ${path.split('?')[0]}`);
+    }
+
     try {
       const body = await response.json() as { id?: string };
       return body.id ?? 'triggered';
@@ -514,11 +590,16 @@ export class FabricApiService {
 
   // ─── Schedules ────────────────────────────────────────────────────────────
 
-  /** Fetches the job schedules for a data pipeline and computes the next run.
-   *  GET /workspaces/{wsId}/items/{itemId}/jobs/Pipeline/schedules
-   *  Returns undefined when the pipeline has no schedule (or on a non-fatal error). */
-  async getPipelineSchedule(tenantId: string, workspaceId: string, pipelineId: string): Promise<ScheduleInfo | undefined> {
-    assertUuids(workspaceId, pipelineId);
+  /** Fetches the job schedules for a Fabric item under a given job type and
+   *  computes the next run. GET /workspaces/{wsId}/items/{itemId}/jobs/{jobType}/schedules
+   *  Returns undefined when no schedule exists (or on a non-fatal error). */
+  private async _getItemSchedule(
+    tenantId: string,
+    workspaceId: string,
+    itemId: string,
+    jobType: string,
+  ): Promise<ScheduleInfo | undefined> {
+    assertUuids(workspaceId, itemId);
     interface RawSchedule {
       id: string;
       enabled: boolean;
@@ -532,12 +613,12 @@ export class FabricApiService {
         localTimeZoneId?: string;
       };
     }
-    const path = `/workspaces/${workspaceId}/items/${pipelineId}/jobs/Pipeline/schedules`;
+    const path = `/workspaces/${workspaceId}/items/${itemId}/jobs/${jobType}/schedules`;
     let data: FabricListResponse<RawSchedule>;
     try {
       data = await this.request<FabricListResponse<RawSchedule>>(tenantId, path);
     } catch (err) {
-      console.warn(`[FabricPulse] Could not fetch schedule for pipeline ${pipelineId}:`, err);
+      console.warn(`[FabricPulse] Could not fetch schedule for item ${itemId}:`, err);
       return undefined;
     }
 
@@ -555,6 +636,18 @@ export class FabricApiService {
       }));
 
     return combineSchedules(defs);
+  }
+
+  /** Fetches the job schedules for a data pipeline and computes the next run.
+   *  Returns undefined when the pipeline has no schedule (or on a non-fatal error). */
+  async getPipelineSchedule(tenantId: string, workspaceId: string, pipelineId: string): Promise<ScheduleInfo | undefined> {
+    return this._getItemSchedule(tenantId, workspaceId, pipelineId, 'Pipeline');
+  }
+
+  /** Fetches the job schedules for a notebook and computes the next run.
+   *  Returns undefined when the notebook has no schedule (or on a non-fatal error). */
+  async getNotebookSchedule(tenantId: string, workspaceId: string, notebookId: string): Promise<ScheduleInfo | undefined> {
+    return this._getItemSchedule(tenantId, workspaceId, notebookId, 'RunNotebook');
   }
 
   /** Fetches the Power BI refresh schedule for a semantic model and computes

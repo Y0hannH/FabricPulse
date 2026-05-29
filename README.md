@@ -3,7 +3,7 @@
 > Real-time pulse of your Microsoft Fabric pipelines — right inside VS Code.
 
 ![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.85-007ACC?style=flat-square&logo=visualstudiocode)
-![Version](https://img.shields.io/badge/Version-1.6.1-blue?style=flat-square)
+![Version](https://img.shields.io/badge/Version-1.7.0-blue?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-00B4D8?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-In%20Development-orange?style=flat-square)
 
@@ -31,6 +31,7 @@ You choose which pipelines matter. FabricPulse watches them, stores their histor
 | 📤 | **Export** | CSV or JSON export of run history for client reports |
 | 📝 | **Annotations** | Manual notes on specific dates to correlate performance with deployments |
 | 🧮 | **Semantic Models** | Monitor Power BI / Fabric Semantic Model refreshes and statuses |
+| 📓 | **Notebooks** | Monitor Fabric Notebook runs (durations, statuses), trigger runs, and view history |
 | 🗄️ | **Lakehouses** | Browse lakehouses, inspect Delta tables, compute table size, refresh sizes on demand, and run Optimize/Vacuum maintenance |
 | 🔢 | **Total Executions** | Total run count displayed per pipeline to gauge execution frequency |
 | 🚀 | **Smart Loading** | Priority loading for favorites, configurable batching, instant cache on startup |
@@ -145,10 +146,13 @@ Dashboard, favorites, history, alerts, multi-tenant, CSV/JSON export, pattern de
 - Overview modal — ranked table sizes, storage analysis, maintenance health, schema breakdown
 - Table name filter and individual size refresh in the Overview
 
-### 🔲 Notebooks & Spark Jobs
-- Fabric Notebooks support (runs, durations, statuses)
-- Spark Jobs support
-- Unified filters across pipelines, notebooks, and semantic models
+### ✅ Notebooks
+- Fabric Notebooks support (runs, durations, statuses) in the main dashboard
+- Trigger on-demand runs, fetch history, schedule-based "Next Run", and favorites — same actions as pipelines
+- Unified type filter across pipelines, notebooks, and semantic models
+
+### 🔲 Spark Jobs
+- Spark Job Definition support (runs, durations, statuses)
 
 ### 🔲 Run Analysis
 - Compare two runs of the same pipeline (parameters, durations, logs)
