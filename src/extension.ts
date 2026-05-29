@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { DashboardPanel } from './panels/DashboardPanel';
 import { LakehousePanel } from './panels/LakehousePanel';
+import { DocumentationPanel } from './panels/DocumentationPanel';
 import { FabricApiService } from './services/fabricApi';
 import { AuthService } from './services/authService';
 import { StorageService } from './services/storageService';
@@ -56,6 +57,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       LakehousePanel.createOrShow(
         context.extensionUri, fabricApi, _storage, context,
       );
+    }),
+
+    // fabricPulse.openDocumentation ─────────────────────────────────────────
+    vscode.commands.registerCommand('fabricPulse.openDocumentation', () => {
+      DocumentationPanel.createOrShow(context.extensionUri);
     }),
 
     // fabricPulse.addTenant ────────────────────────────────────────────────

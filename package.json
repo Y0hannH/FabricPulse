@@ -55,7 +55,7 @@
     "viewsWelcome": [
       {
         "view": "fabricpulse.launchView",
-        "contents": "⚡ Monitor your Microsoft Fabric data pipelines in real time.\n\n[$(pulse) Open Dashboard](command:fabricPulse.openDashboard)\n\n[$(database) Open Lakehouses](command:fabricPulse.openLakehouses)\n\n[$(add) Add Tenant](command:fabricPulse.addTenant)\n\n[$(trash) Clear History](command:fabricPulse.clearHistory)"
+        "contents": "⚡ Monitor your Microsoft Fabric data pipelines in real time.\n\n[$(pulse) Open Dashboard](command:fabricPulse.openDashboard)\n\n[$(database) Open Lakehouses](command:fabricPulse.openLakehouses)\n\n[$(add) Add Tenant](command:fabricPulse.addTenant)\n\n[$(trash) Clear History](command:fabricPulse.clearHistory)\n\n[$(book) Open Documentation](command:fabricPulse.openDocumentation)"
       }
     ],
     "commands": [
@@ -68,6 +68,11 @@
         "command": "fabricPulse.openLakehouses",
         "title": "FabricPulse: Open Lakehouses",
         "icon": "$(database)"
+      },
+      {
+        "command": "fabricPulse.openDocumentation",
+        "title": "FabricPulse: Open Documentation",
+        "icon": "$(book)"
       },
       {
         "command": "fabricPulse.addTenant",
@@ -89,6 +94,9 @@
         },
         {
           "command": "fabricPulse.openLakehouses"
+        },
+        {
+          "command": "fabricPulse.openDocumentation"
         },
         {
           "command": "fabricPulse.addTenant"
