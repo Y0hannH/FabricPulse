@@ -2,6 +2,11 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
+## [1.8.1] - 2026-06-01
+
+### Fixed
+- **Next Run — monthly schedules**: Monthly Fabric schedules (e.g. "the 1st of each month at 08:00") were computed and labelled as **Daily** because the `Monthly` schedule type was not handled. The next-run estimate now supports monthly schedules — both day-of-month occurrences (e.g. day 1, with months lacking that day skipped) and ordinal-weekday occurrences (e.g. "Second Tuesday"), plus the `recurrence` interval (every N months). The tooltip now reads e.g. `Monthly — day 1 at 08:00` instead of `Daily`
+
 ## [1.8.0] - 2026-05-29
 
 ### Added

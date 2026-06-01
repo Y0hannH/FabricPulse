@@ -12,13 +12,18 @@
 /** Normalized schedule definition (Fabric "configuration" or PBI refreshSchedule). */
 export interface ScheduleDef {
   enabled: boolean;
-  type: 'Cron' | 'Daily' | 'Weekly';
+  type: 'Cron' | 'Daily' | 'Weekly' | 'Monthly';
   interval?: number;        // Cron: minutes between runs
-  times?: string[];         // Daily/Weekly: "HH:mm" wall-clock times
+  times?: string[];         // Daily/Weekly/Monthly: "HH:mm" wall-clock times
   weekdays?: string[];      // Weekly: English day names ("Monday" …)
   startDateTime?: string;   // wall-clock anchor in localTimeZoneId (no tz suffix)
   endDateTime?: string;     // wall-clock end in localTimeZoneId
   localTimeZoneId?: string; // Windows time-zone id
+  // Monthly only —
+  recurrence?: number;      // every N months (1–12); anchored on startDateTime's month
+  dayOfMonth?: number;      // DayOfMonth occurrence: 1–31
+  weekIndex?: string;       // OrdinalWeekday occurrence: First|Second|Third|Fourth|Fifth
+  ordinalWeekday?: string;  // OrdinalWeekday occurrence: English day name ("Monday" …)
 }
 
 /** Result consumed by the dashboard. */
@@ -33,6 +38,39 @@ const WEEKDAY_INDEX: Record<string, number> = {
 };
 
 const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+const WEEK_INDEX: Record<string, number> = {
+  first: 1, second: 2, third: 3, fourth: 4, fifth: 5,
+};
+
+/** Number of days in a given (1-based) month. */
+function daysInMonth(year: number, month1: number): number {
+  return new Date(Date.UTC(year, month1, 0)).getUTCDate();
+}
+
+/** Resolves the day-of-month (1–31) a Monthly schedule targets for the given
+ *  calendar month, or undefined when that month has no matching day (e.g. the
+ *  31st in February, or a missing "Fifth Monday") — such months are skipped. */
+function resolveMonthlyDay(def: ScheduleDef, year: number, month1: number): number | undefined {
+  const dim = daysInMonth(year, month1);
+
+  // OrdinalWeekday occurrence (e.g. "Second Tuesday")
+  if (def.weekIndex && def.ordinalWeekday) {
+    const targetDow = WEEKDAY_INDEX[def.ordinalWeekday.toLowerCase()];
+    const n = WEEK_INDEX[def.weekIndex.toLowerCase()];
+    if (targetDow == null || n == null) return undefined;
+    const firstDow = new Date(Date.UTC(year, month1 - 1, 1)).getUTCDay();
+    const day = 1 + ((targetDow - firstDow + 7) % 7) + (n - 1) * 7;
+    return day <= dim ? day : undefined;
+  }
+
+  // DayOfMonth occurrence (e.g. "the 1st")
+  if (def.dayOfMonth != null) {
+    return def.dayOfMonth <= dim ? def.dayOfMonth : undefined;
+  }
+
+  return undefined;
+}
 
 /** Windows time-zone id → IANA name. Covers the common zones; unknown ids
  *  fall back to UTC (with a console warning) so the next-run estimate stays
@@ -178,12 +216,37 @@ export function computeNextRun(def: ScheduleDef, nowMs: number = Date.now()): nu
     return endMs != null && next > endMs ? undefined : next;
   }
 
-  // Daily / Weekly: scan forward day by day for the next matching time.
+  // All time-slot schedules (Daily / Weekly / Monthly) share this parsed list.
   const times = (def.times ?? [])
     .map(t => { const [h, mi] = t.split(':'); return { h: Number(h), mi: Number(mi) }; })
     .filter(t => Number.isFinite(t.h) && Number.isFinite(t.mi))
     .sort((a, b) => a.h - b.h || a.mi - b.mi);
   if (times.length === 0) return undefined;
+
+  if (def.type === 'Monthly') {
+    const recurrence = def.recurrence && def.recurrence > 0 ? def.recurrence : 1;
+    // Anchor the "every N months" cadence on the schedule's start month (or now).
+    const anchorWc = startMs != null ? tzParts(startMs, tz) : tzParts(nowMs, tz);
+    const anchorIdx = anchorWc.year * 12 + (anchorWc.month - 1);
+    const nowWcM = tzParts(nowMs, tz);
+    const startIdx = nowWcM.year * 12 + (nowWcM.month - 1);
+
+    // Scan up to 10 years ahead (recurrence ≤ 12 ⇒ at most ~120 valid months).
+    for (let i = 0; i <= 120; i++) {
+      const monthIdx = startIdx + i;
+      if (monthIdx < anchorIdx) continue;
+      if ((monthIdx - anchorIdx) % recurrence !== 0) continue;
+      const cy = Math.floor(monthIdx / 12);
+      const cm = (monthIdx % 12) + 1;
+      const day = resolveMonthlyDay(def, cy, cm);
+      if (day == null) continue;
+      for (const t of times) {
+        const cand = zonedWallClockToUtc(cy, cm, day, t.h, t.mi, tz);
+        if (cand >= lower && (endMs == null || cand <= endMs)) return cand;
+      }
+    }
+    return undefined;
+  }
 
   const weekdaySet = def.type === 'Weekly'
     ? new Set((def.weekdays ?? []).map(d => WEEKDAY_INDEX[d.toLowerCase()]).filter(n => n != null))
@@ -218,6 +281,19 @@ export function summarize(def: ScheduleDef): string {
       .map(d => WEEKDAY_SHORT[WEEKDAY_INDEX[d.toLowerCase()] ?? -1] ?? d)
       .join(', ');
     return `Weekly — ${days || '?'} at ${times || '?'}${tzSuffix}`;
+  }
+  if (def.type === 'Monthly') {
+    const rec = def.recurrence && def.recurrence > 1 ? `every ${def.recurrence} months` : 'Monthly';
+    let when: string;
+    if (def.weekIndex && def.ordinalWeekday) {
+      const wd = WEEKDAY_SHORT[WEEKDAY_INDEX[def.ordinalWeekday.toLowerCase()] ?? -1] ?? def.ordinalWeekday;
+      when = `${def.weekIndex} ${wd}`;
+    } else if (def.dayOfMonth != null) {
+      when = `day ${def.dayOfMonth}`;
+    } else {
+      when = '?';
+    }
+    return `${rec} — ${when} at ${times || '?'}${tzSuffix}`;
   }
   return `Daily — ${times || '?'}${tzSuffix}`;
 }

@@ -611,6 +611,14 @@ export class FabricApiService {
         startDateTime?: string;
         endDateTime?: string;
         localTimeZoneId?: string;
+        // Monthly only —
+        recurrence?: number;
+        occurrence?: {
+          occurrenceType?: string; // 'DayOfMonth' | 'OrdinalWeekday'
+          dayOfMonth?: number;
+          weekIndex?: string;      // First|Second|Third|Fourth|Fifth
+          weekday?: string;        // English day name
+        };
       };
     }
     const path = `/workspaces/${workspaceId}/items/${itemId}/jobs/${jobType}/schedules`;
@@ -633,6 +641,10 @@ export class FabricApiService {
         startDateTime: s.configuration!.startDateTime,
         endDateTime: s.configuration!.endDateTime,
         localTimeZoneId: s.configuration!.localTimeZoneId,
+        recurrence: s.configuration!.recurrence,
+        dayOfMonth: s.configuration!.occurrence?.dayOfMonth,
+        weekIndex: s.configuration!.occurrence?.weekIndex,
+        ordinalWeekday: s.configuration!.occurrence?.weekday,
       }));
 
     return combineSchedules(defs);
