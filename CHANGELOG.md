@@ -2,6 +2,11 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
+## [1.8.2] - 2026-06-01
+
+### Fixed
+- **First-launch refresh respects favorites-only**: Since the live-refresh-on-open change, the initial forced refresh enumerated every workspace and item even when the favorites-only filter was (or would be) active. The dashboard now decides up front — before the first fetch — to start in favorites-only mode when the active tenant has favorites, and the initial open then takes the light path: it refreshes only the favorites (live) from cache instead of listing every workspace. The manual Refresh button still performs a full refresh of every item
+
 ## [1.8.1] - 2026-06-01
 
 ### Fixed

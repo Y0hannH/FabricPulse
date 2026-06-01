@@ -51,6 +51,10 @@ export class DashboardPanel {
   private _batchProgress: { done: number; total: number } | undefined = undefined;
   private _disposed = false;
   private _favoritesOnlyMode = false;
+  /** Whether the one-time "default to favorites-only when favorites exist" rule
+   *  has been applied. Mirrors the webview's auto-enable so the very first
+   *  refresh only fetches favorites instead of enumerating every workspace. */
+  private _favoritesDefaultApplied = false;
 
   /** itemId → epoch ms of last live API fetch for runs.
    *  Cleared when the workspace or tenant changes so the first load is always live. */
@@ -130,12 +134,21 @@ export class DashboardPanel {
     this._postState();
   }
 
-  public async refresh(force = false): Promise<void> {
+  public async refresh(force = false, initialLoad = false): Promise<void> {
     if (this._isLoading) return; // debounce concurrent refreshes
 
     if (!this._currentTenantId) {
       this._postState();
       return;
+    }
+
+    // First refresh: default to favorites-only when the tenant has favorites, so
+    // the initial (forced) load only refreshes those instead of every workspace.
+    // Mirrors the webview's auto-enable, but is known *before* the fetch starts.
+    if (!this._favoritesDefaultApplied) {
+      this._favoritesDefaultApplied = true;
+      const favs = this._storage.getFavorites().filter(f => f.tenantId === this._currentTenantId);
+      if (favs.length > 0) this._favoritesOnlyMode = true;
     }
 
     this._isLoading = true;
@@ -149,7 +162,12 @@ export class DashboardPanel {
 
     try {
       // ── No workspace selected: serve from SQLite cache when possible ──────
-      if (!this._selectedWorkspaceId && !force) {
+      // A forced refresh normally bypasses the cache to re-fetch everything.
+      // On the initial open in favorites-only mode we keep the light path: it
+      // refreshes just the favorites (live) instead of enumerating every
+      // workspace. The manual Refresh button (initialLoad=false) still does a
+      // full refresh so the user can always force-update every item.
+      if (!this._selectedWorkspaceId && (!force || (initialLoad && this._favoritesOnlyMode))) {
         const cachedWorkspaces = this._storage.getKnownWorkspaces(this._currentTenantId);
 
         if (cachedWorkspaces.length > 0) {
@@ -199,10 +217,13 @@ export class DashboardPanel {
           const pollingMs = cfg.get<number>('pollingInterval', 60) * 1000;
           const favorites = this._storage.getFavorites().filter(f => f.tenantId === this._currentTenantId);
           const wsMap = new Map(this._workspaces.map(w => [w.id, w]));
-          const staleFavorites = favorites.filter(f => {
-            const lastFetched = this._runsFetchedAt.get(f.pipelineId) ?? 0;
-            return (Date.now() - lastFetched) >= pollingMs;
-          });
+          // A forced refresh re-fetches every favorite; otherwise only stale ones.
+          const staleFavorites = force
+            ? favorites
+            : favorites.filter(f => {
+              const lastFetched = this._runsFetchedAt.get(f.pipelineId) ?? 0;
+              return (Date.now() - lastFetched) >= pollingMs;
+            });
 
           const favBatchSize = cfg.get<number>('batchSize', 5);
           for (let i = 0; i < staleFavorites.length; i += favBatchSize) {
@@ -517,7 +538,8 @@ export class DashboardPanel {
         // Force a live refresh on first open: this acquires the auth token and
         // fetches fresh runs immediately. Phase 1 still paints cached rows first,
         // so the UI stays fast while live data streams in — no manual click needed.
-        await this.refresh(true);
+        // initialLoad=true keeps it light in favorites-only mode (favorites only).
+        await this.refresh(true, true);
         break;
 
       case 'refresh':
