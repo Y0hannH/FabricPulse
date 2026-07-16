@@ -344,6 +344,16 @@ button { cursor: pointer; font-family: inherit; font-size: inherit; }
   color:        var(--fp-green);
   border-color: var(--fp-green);
 }
+.type-filter-btn[data-itype="copyJob"].active {
+  background:   rgba(229,164,0,0.15);
+  color:        var(--fp-orange);
+  border-color: var(--fp-orange);
+}
+.type-filter-btn[data-itype="dbtJob"].active {
+  background:   rgba(110,118,129,0.15);
+  color:        var(--fp-grey);
+  border-color: var(--fp-grey);
+}
 
 /* ── Item type badges ────────────────────────────────────────────────────────── */
 .item-type-badge {
@@ -366,6 +376,14 @@ button { cursor: pointer; font-family: inherit; font-size: inherit; }
 .item-type-notebook {
   background: rgba(78,201,176,0.12);
   color:      var(--fp-green);
+}
+.item-type-copyjob {
+  background: rgba(229,164,0,0.12);
+  color:      var(--fp-orange);
+}
+.item-type-dbtjob {
+  background: rgba(110,118,129,0.12);
+  color:      var(--fp-grey);
 }
 
 /* ── Buttons ─────────────────────────────────────────────────────────────────── */

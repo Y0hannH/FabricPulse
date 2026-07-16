@@ -401,6 +401,34 @@ export class FabricApiService {
     }));
   }
 
+  async getCopyJobs(tenantId: string, workspaceId: string): Promise<Pipeline[]> {
+    assertUuids(workspaceId);
+    const items = await this.listAll<FabricPipeline>(tenantId, `/workspaces/${workspaceId}/copyJobs`);
+    return items.map(p => ({
+      id: p.id,
+      displayName: p.displayName,
+      workspaceId,
+      workspaceName: '',
+      tenantId,
+      itemType: 'copyJob' as const,
+    }));
+  }
+
+  /** dbt jobs (preview) have no dedicated list endpoint — filtered from the
+   *  generic Items API. GET /workspaces/{wsId}/items?type=DataBuildToolJob */
+  async getDbtJobs(tenantId: string, workspaceId: string): Promise<Pipeline[]> {
+    assertUuids(workspaceId);
+    const items = await this.listAll<FabricPipeline>(tenantId, `/workspaces/${workspaceId}/items?type=DataBuildToolJob`);
+    return items.map(p => ({
+      id: p.id,
+      displayName: p.displayName,
+      workspaceId,
+      workspaceName: '',
+      tenantId,
+      itemType: 'dbtJob' as const,
+    }));
+  }
+
   // ─── Pipeline runs (Fabric jobs/instances) ────────────────────────────────
 
   async getPipelineRuns(
@@ -523,6 +551,100 @@ export class FabricApiService {
     } catch {
       return 'triggered';
     }
+  }
+
+  // ─── Copy Job runs (Fabric jobs/instances) ────────────────────────────────
+
+  /** Full run history for a Copy Job, via the generic items jobs/instances endpoint
+   *  (same shape as pipelines/notebooks). */
+  async getCopyJobRuns(
+    tenantId: string,
+    workspaceId: string,
+    copyJobId: string,
+  ): Promise<PipelineRun[]> {
+    assertUuids(workspaceId, copyJobId);
+    const path = `/workspaces/${workspaceId}/items/${copyJobId}/jobs/instances`;
+    const items = await this.listAll<FabricRun>(tenantId, path);
+    return this._mapRuns(items, copyJobId);
+  }
+
+  /** Fetches only the first page of Copy Job runs and returns the most recent one. */
+  async getLastCopyJobRun(
+    tenantId: string,
+    workspaceId: string,
+    copyJobId: string,
+  ): Promise<PipelineRun | undefined> {
+    assertUuids(workspaceId, copyJobId);
+    const path = `/workspaces/${workspaceId}/items/${copyJobId}/jobs/instances`;
+    const data = await this.request<FabricListResponse<FabricRun>>(tenantId, path);
+    const items = data.value ?? [];
+    if (items.length === 0) return undefined;
+    return this._mapRuns(items, copyJobId)[0];
+  }
+
+  /** Triggers an on-demand Copy Job run. Returns the new job instance ID
+   *  (or 'triggered' when the API returns 202 with no body).
+   *  Unlike pipelines/notebooks, Copy Jobs use jobType=Execute. */
+  async triggerCopyJob(tenantId: string, workspaceId: string, copyJobId: string): Promise<string> {
+    assertUuids(workspaceId, copyJobId);
+    const token = await this.auth.getToken(tenantId);
+    const path = `/workspaces/${workspaceId}/items/${copyJobId}/jobs/instances?jobType=Execute`;
+    const url = `${BASE_URL}${path}`;
+
+    const response = await fetchWithRetry(
+      () => fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+        timeout: FETCH_TIMEOUT_MS,
+      }),
+      path.split('?')[0],
+    );
+
+    if (!response.ok) {
+      if (response.status === 401) this.auth.clearCredential(tenantId);
+      throw new Error(`Fabric API error ${response.status} on ${path.split('?')[0]}`);
+    }
+
+    try {
+      const body = await response.json() as { id?: string };
+      return body.id ?? 'triggered';
+    } catch {
+      return 'triggered';
+    }
+  }
+
+  // ─── dbt Job runs (Fabric jobs/instances, read-only — preview) ────────────
+
+  /** Full run history for a dbt Job, via the generic items jobs/instances endpoint.
+   *  dbt jobs are preview-only and cannot be triggered via the REST API — this
+   *  is read-only monitoring of runs started by the built-in Fabric schedule. */
+  async getDbtJobRuns(
+    tenantId: string,
+    workspaceId: string,
+    dbtJobId: string,
+  ): Promise<PipelineRun[]> {
+    assertUuids(workspaceId, dbtJobId);
+    const path = `/workspaces/${workspaceId}/items/${dbtJobId}/jobs/instances`;
+    const items = await this.listAll<FabricRun>(tenantId, path);
+    return this._mapRuns(items, dbtJobId);
+  }
+
+  /** Fetches only the first page of dbt Job runs and returns the most recent one. */
+  async getLastDbtJobRun(
+    tenantId: string,
+    workspaceId: string,
+    dbtJobId: string,
+  ): Promise<PipelineRun | undefined> {
+    assertUuids(workspaceId, dbtJobId);
+    const path = `/workspaces/${workspaceId}/items/${dbtJobId}/jobs/instances`;
+    const data = await this.request<FabricListResponse<FabricRun>>(tenantId, path);
+    const items = data.value ?? [];
+    if (items.length === 0) return undefined;
+    return this._mapRuns(items, dbtJobId)[0];
   }
 
   // ─── Semantic model refreshes (Power BI REST API) ─────────────────────────
@@ -660,6 +782,20 @@ export class FabricApiService {
    *  Returns undefined when the notebook has no schedule (or on a non-fatal error). */
   async getNotebookSchedule(tenantId: string, workspaceId: string, notebookId: string): Promise<ScheduleInfo | undefined> {
     return this._getItemSchedule(tenantId, workspaceId, notebookId, 'RunNotebook');
+  }
+
+  /** Fetches the job schedules for a Copy Job and computes the next run.
+   *  Returns undefined when the Copy Job has no schedule (or on a non-fatal error). */
+  async getCopyJobSchedule(tenantId: string, workspaceId: string, copyJobId: string): Promise<ScheduleInfo | undefined> {
+    return this._getItemSchedule(tenantId, workspaceId, copyJobId, 'Execute');
+  }
+
+  /** Fetches the job schedules for a dbt Job and computes the next run.
+   *  dbt jobs are preview-only; the exact jobType string for schedules is
+   *  unconfirmed against a live tenant — falls back to undefined (no "Next Run"
+   *  shown) on error rather than throwing, same as the other schedule fetchers. */
+  async getDbtJobSchedule(tenantId: string, workspaceId: string, dbtJobId: string): Promise<ScheduleInfo | undefined> {
+    return this._getItemSchedule(tenantId, workspaceId, dbtJobId, 'Execute');
   }
 
   /** Fetches the Power BI refresh schedule for a semantic model and computes

@@ -311,10 +311,12 @@ export class DashboardPanel {
         const ws = filteredWorkspaces[wsIdx];
 
         // Sequential list calls: pipelines first warms up the auth token,
-        // then semantic models and notebooks reuse the cached token — avoids parallel auth popups.
+        // then the remaining types reuse the cached token — avoids parallel auth popups.
         let pipelines: import('../models/types').Pipeline[] = [];
         let models: import('../models/types').Pipeline[] = [];
         let notebooks: import('../models/types').Pipeline[] = [];
+        let copyJobs: import('../models/types').Pipeline[] = [];
+        let dbtJobs: import('../models/types').Pipeline[] = [];
 
         try {
           pipelines = await this._fabricApi.getPipelines(this._currentTenantId, ws.id);
@@ -331,8 +333,18 @@ export class DashboardPanel {
         } catch (err) {
           console.warn(`[FabricPulse] Error fetching notebooks for workspace ${ws.displayName}:`, err);
         }
+        try {
+          copyJobs = await this._fabricApi.getCopyJobs(this._currentTenantId, ws.id);
+        } catch (err) {
+          console.warn(`[FabricPulse] Error fetching copy jobs for workspace ${ws.displayName}:`, err);
+        }
+        try {
+          dbtJobs = await this._fabricApi.getDbtJobs(this._currentTenantId, ws.id);
+        } catch (err) {
+          console.warn(`[FabricPulse] Error fetching dbt jobs for workspace ${ws.displayName}:`, err);
+        }
 
-        const allItems = [...pipelines, ...models, ...notebooks];
+        const allItems = [...pipelines, ...models, ...notebooks, ...copyJobs, ...dbtJobs];
 
         for (const p of allItems) {
           p.workspaceName = ws.displayName;
@@ -705,6 +717,14 @@ export class DashboardPanel {
           case 'notebook':
             url = `https://app.fabric.microsoft.com/groups/${msg.workspaceId}/synapsenotebooks/${msg.pipelineId}`;
             break;
+          case 'copyJob':
+            // Best-guess deep link by analogy with the other item types — not
+            // documented by Microsoft. Verify against a real tenant and adjust.
+            url = `https://app.fabric.microsoft.com/groups/${msg.workspaceId}/copyjobs/${msg.pipelineId}`;
+            break;
+          case 'dbtJob':
+            url = `https://app.fabric.microsoft.com/groups/${msg.workspaceId}/dbtitems/${msg.pipelineId}?experience=power-bi`;
+            break;
           default:
             url = `https://app.fabric.microsoft.com/groups/${msg.workspaceId}/pipelines/${msg.pipelineId}?experience=data-pipeline`;
             break;
@@ -803,6 +823,8 @@ export class DashboardPanel {
     switch (itemType ?? 'pipeline') {
       case 'semanticModel': return this._fabricApi.getLastSemanticModelRun(this._currentTenantId, workspaceId, itemId);
       case 'notebook':      return this._fabricApi.getLastNotebookRun(this._currentTenantId, workspaceId, itemId);
+      case 'copyJob':       return this._fabricApi.getLastCopyJobRun(this._currentTenantId, workspaceId, itemId);
+      case 'dbtJob':        return this._fabricApi.getLastDbtJobRun(this._currentTenantId, workspaceId, itemId);
       default:              return this._fabricApi.getLastPipelineRun(this._currentTenantId, workspaceId, itemId);
     }
   }
@@ -812,15 +834,22 @@ export class DashboardPanel {
     switch (itemType ?? 'pipeline') {
       case 'semanticModel': return this._fabricApi.getSemanticModelRuns(this._currentTenantId, workspaceId, itemId);
       case 'notebook':      return this._fabricApi.getNotebookRuns(this._currentTenantId, workspaceId, itemId);
+      case 'copyJob':       return this._fabricApi.getCopyJobRuns(this._currentTenantId, workspaceId, itemId);
+      case 'dbtJob':        return this._fabricApi.getDbtJobRuns(this._currentTenantId, workspaceId, itemId);
       default:              return this._fabricApi.getPipelineRuns(this._currentTenantId, workspaceId, itemId);
     }
   }
 
-  /** Triggers an on-demand run for an item, dispatching on its type. */
+  /** Triggers an on-demand run for an item, dispatching on its type.
+   *  dbt jobs (preview) have no REST API to trigger a run — the UI hides the
+   *  rerun button for this type, but this throws a clear error as a safety net
+   *  in case it's ever reached anyway. */
   private _triggerItem(workspaceId: string, itemId: string, itemType?: ItemType): Promise<string> {
     switch (itemType ?? 'pipeline') {
       case 'semanticModel': return this._fabricApi.triggerSemanticModelRefresh(this._currentTenantId, workspaceId, itemId);
       case 'notebook':      return this._fabricApi.triggerNotebook(this._currentTenantId, workspaceId, itemId);
+      case 'copyJob':       return this._fabricApi.triggerCopyJob(this._currentTenantId, workspaceId, itemId);
+      case 'dbtJob':        return Promise.reject(new Error('dbt jobs cannot be triggered via the Fabric API (preview limitation) — use the schedule in the Fabric portal.'));
       default:              return this._fabricApi.triggerPipeline(this._currentTenantId, workspaceId, itemId);
     }
   }
@@ -907,6 +936,8 @@ export class DashboardPanel {
       switch (item.itemType ?? 'pipeline') {
         case 'semanticModel': info = await this._fabricApi.getSemanticModelSchedule(this._currentTenantId, workspaceId, item.id); break;
         case 'notebook':      info = await this._fabricApi.getNotebookSchedule(this._currentTenantId, workspaceId, item.id); break;
+        case 'copyJob':       info = await this._fabricApi.getCopyJobSchedule(this._currentTenantId, workspaceId, item.id); break;
+        case 'dbtJob':        info = await this._fabricApi.getDbtJobSchedule(this._currentTenantId, workspaceId, item.id); break;
         default:              info = await this._fabricApi.getPipelineSchedule(this._currentTenantId, workspaceId, item.id); break;
       }
       if (info !== undefined) this._schedulesById.set(item.id, info);

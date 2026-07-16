@@ -3,7 +3,7 @@
 > Real-time pulse of your Microsoft Fabric pipelines — right inside VS Code.
 
 ![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.85-007ACC?style=flat-square&logo=visualstudiocode)
-![Version](https://img.shields.io/badge/Version-1.8.2-blue?style=flat-square)
+![Version](https://img.shields.io/badge/Version-1.9.0-blue?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-00B4D8?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-In%20Development-orange?style=flat-square)
 
@@ -32,6 +32,8 @@ You choose which pipelines matter. FabricPulse watches them, stores their histor
 | 📝 | **Annotations** | Manual notes on specific dates to correlate performance with deployments |
 | 🧮 | **Semantic Models** | Monitor Power BI / Fabric Semantic Model refreshes and statuses |
 | 📓 | **Notebooks** | Monitor Fabric Notebook runs (durations, statuses), trigger runs, and view history |
+| 📦 | **Copy Jobs** | Monitor Fabric Copy Job runs, next scheduled run, trigger on demand, and view full history |
+| 🧪 | **dbt Jobs** *(preview)* | Monitor Fabric dbt Job runs and next scheduled run (read-only — dbt jobs in preview can't be triggered via the Fabric API) |
 | 🗄️ | **Lakehouses** | Browse lakehouses, inspect Delta tables, compute table size, refresh sizes on demand, and run Optimize/Vacuum maintenance |
 | 🔢 | **Total Executions** | Total run count displayed per pipeline to gauge execution frequency |
 | 🚀 | **Smart Loading** | Priority loading for favorites, configurable batching, instant cache on startup |
@@ -152,6 +154,11 @@ Dashboard, favorites, history, alerts, multi-tenant, CSV/JSON export, pattern de
 - Fabric Notebooks support (runs, durations, statuses) in the main dashboard
 - Trigger on-demand runs, fetch history, schedule-based "Next Run", and favorites — same actions as pipelines
 - Unified type filter across pipelines, notebooks, and semantic models
+
+### ✅ Copy Jobs & dbt Jobs
+- Fabric Copy Job support — full parity with pipelines (runs, "Next Run", trigger on demand, history, favorites)
+- Fabric dbt Job support *(preview)* — runs and "Next Run" (read-only: the Fabric API doesn't support triggering dbt jobs in preview)
+- Unified type filter extended to copy jobs and dbt jobs
 
 ### 🔲 Spark Jobs
 - Spark Job Definition support (runs, durations, statuses)

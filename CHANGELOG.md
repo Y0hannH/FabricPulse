@@ -2,6 +2,17 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
+## [1.9.0] - 2026-07-16
+
+### Added
+- **Copy Jobs**: Fabric Copy Job runs are now monitored in the main dashboard with the same feature set as pipelines — last run status, run history, success rate, durations, "Next Run" (schedule-based), on-demand trigger, favorites, and alerts. New type filter (`Copy Job`)
+- **dbt Jobs** *(preview)*: Fabric dbt Job runs (`DataBuildToolJob`) are monitored read-only — last run, history, and "Next Run". The Fabric REST API does not support triggering dbt jobs in preview, so the trigger button is hidden for this type. New type filter (`dbt Job`)
+
+All Copy Job and dbt Job features above (listing, run history, "Next Run", trigger for Copy Jobs, and the "Open in Fabric" deep links) have been confirmed working against a live tenant.
+
+### Known limitations
+- dbt Jobs remain read-only (no trigger button) — the Fabric REST API does not support starting a dbt job run programmatically while the feature is in preview
+
 ## [1.8.2] - 2026-06-01
 
 ### Fixed

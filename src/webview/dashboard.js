@@ -257,6 +257,8 @@ function buildRowHtml(/** @type {any} */ p) {
   const isModel = itype === 'semanticModel';
   const isNotebook = itype === 'notebook';
   const isPipeline = itype === 'pipeline';
+  const isCopyJob = itype === 'copyJob';
+  const isDbtJob = itype === 'dbtJob';
 
   const rate = p.successRate7d;
   const rateCls = rate == null ? '' : rate >= 90 ? 'rate-high' : rate >= 70 ? 'rate-mid' : 'rate-low';
@@ -272,9 +274,14 @@ function buildRowHtml(/** @type {any} */ p) {
     ? `<span class="item-type-badge item-type-model" title="Semantic Model">Model</span>`
     : isNotebook
       ? `<span class="item-type-badge item-type-notebook" title="Notebook">Notebook</span>`
-      : `<span class="item-type-badge item-type-pipeline" title="Data Pipeline">Pipeline</span>`;
+      : isCopyJob
+        ? `<span class="item-type-badge item-type-copyjob" title="Copy Job">Copy Job</span>`
+        : isDbtJob
+          ? `<span class="item-type-badge item-type-dbtjob" title="dbt Job">dbt Job</span>`
+          : `<span class="item-type-badge item-type-pipeline" title="Data Pipeline">Pipeline</span>`;
 
-  const rerunTitle = isModel ? 'Trigger refresh' : isNotebook ? 'Run notebook' : 'Re-run pipeline';
+  const rerunTitle = isModel ? 'Trigger refresh' : isNotebook ? 'Run notebook' : isCopyJob ? 'Run copy job'
+    : isDbtJob ? 'Not triggerable via API (preview) — use the Fabric portal schedule' : 'Re-run pipeline';
   const rerunIcon = isModel ? '⟳' : '▶';
 
   return `
@@ -293,7 +300,7 @@ function buildRowHtml(/** @type {any} */ p) {
     <div class="actions">
       <button class="action-btn" data-action="refresh-pipeline"  title="Refresh last run">↺</button>
       <button class="action-btn" data-action="fetch-history"    title="Fetch full history">⬇</button>
-      <button class="action-btn" data-action="rerun"            title="${rerunTitle}">${rerunIcon}</button>
+      <button class="action-btn ${isDbtJob ? 'invisible' : ''}" data-action="rerun" title="${rerunTitle}" ${isDbtJob ? 'tabindex="-1" aria-hidden="true"' : ''}>${rerunIcon}</button>
       <button class="action-btn ${!runId ? 'disabled' : ''}"   data-action="copy"    title="Copy Run ID">📋</button>
       <button class="action-btn" data-action="portal"           title="Open in Fabric portal">🔗</button>
       <button class="action-btn ${isPipeline ? '' : 'invisible'}" data-action="monitor" title="Open run monitoring in Fabric" ${isPipeline ? '' : 'tabindex="-1" aria-hidden="true"'}>📈</button>
@@ -335,7 +342,7 @@ function handleRowClick(/** @type {MouseEvent} */ e) {
   const pname  = tr.dataset.pname ?? '';
   const wname  = tr.dataset.wsname ?? '';
   const runId  = tr.dataset.runid ?? '';
-  const itype  = /** @type {'pipeline'|'semanticModel'|'notebook'} */ (tr.dataset.itype ?? 'pipeline');
+  const itype  = /** @type {'pipeline'|'semanticModel'|'notebook'|'copyJob'|'dbtJob'} */ (tr.dataset.itype ?? 'pipeline');
 
   switch (btn.dataset.action) {
     case 'star':
