@@ -438,6 +438,32 @@ button { cursor: pointer; font-family: inherit; font-size: inherit; }
   100% { transform: translateX(300%); }
 }
 
+/* ── Re-authentication banner ────────────────────────────────────────────────── */
+.auth-banner {
+  display:       flex;
+  align-items:   center;
+  gap:           8px;
+  padding:       6px 12px;
+  font-size:     12px;
+  flex-shrink:   0;
+  border-bottom: 1px solid transparent;
+}
+.auth-banner-icon { flex-shrink: 0; }
+.auth-banner-text { flex: 1; }
+
+/* Waiting on the user to finish signing in — informational, data is still live */
+.auth-banner-pending {
+  background:    #3a2e1a;
+  color:         var(--fp-orange);
+  border-color:  var(--fp-orange);
+}
+/* Sign-in failed — refreshes will keep failing until it is resolved */
+.auth-banner-failed {
+  background:    #3a1a1a;
+  color:         var(--fp-red);
+  border-color:  var(--fp-red);
+}
+
 /* ── Toast ───────────────────────────────────────────────────────────────────── */
 .toast {
   position:   fixed;

@@ -182,6 +182,9 @@ export interface DashboardState {
   isLoading: boolean;
   batchProgress?: { done: number; total: number };
   error?: string;
+  /** Set while a sign-in is waiting on the user, or after one failed. Drives the
+   *  re-auth banner; absent when authentication is healthy. */
+  auth?: { phase: 'pending' | 'failed'; message?: string };
 }
 
 export interface HistoryData {
@@ -215,7 +218,8 @@ export type WebviewToExtMsg =
   | { type: 'exportHistory'; pipelineId: string }
   | { type: 'fetchPipelineHistory'; pipelineId: string; workspaceId: string; itemType?: ItemType }
   | { type: 'blacklistWorkspace'; workspaceId: string; workspaceName: string }
-  | { type: 'setFavoritesOnly'; enabled: boolean };
+  | { type: 'setFavoritesOnly'; enabled: boolean }
+  | { type: 'reauthenticate' };
 
 // Messages sent FROM extension TO webview (dashboard)
 export type ExtToDashMsg =

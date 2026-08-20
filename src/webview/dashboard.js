@@ -52,6 +52,10 @@ const dom = {
   btnRefresh:        $('btn-refresh'),
   btnAddTenant:      $('btn-add-tenant'),
   loadingBar:        $('loading-bar'),
+  authBanner:        $('auth-banner'),
+  authBannerIcon:    $('auth-banner-icon'),
+  authBannerText:    $('auth-banner-text'),
+  btnReauth:         $('btn-reauth'),
   toast:             $('toast'),
   emptyTenants:      $('empty-tenants'),
   tableWrap:         $('table-wrap'),
@@ -92,6 +96,7 @@ setInterval(() => renderLastRefreshed(), 15_000);
 // ── Render ────────────────────────────────────────────────────────────────────
 function render() {
   renderLoadingBar();
+  renderAuthBanner();
   renderToolbar();
   renderTable();
   renderLastRefreshed();
@@ -99,6 +104,23 @@ function render() {
 
 function renderLoadingBar() {
   dom.loadingBar.classList.toggle('hidden', !state.isLoading);
+}
+
+function renderAuthBanner() {
+  const auth = state.auth;
+  dom.authBanner.classList.toggle('hidden', !auth);
+  dom.authBanner.classList.toggle('auth-banner-pending', auth?.phase === 'pending');
+  dom.authBanner.classList.toggle('auth-banner-failed', auth?.phase === 'failed');
+  if (!auth) return;
+
+  const pending = auth.phase === 'pending';
+  dom.authBannerIcon.textContent = pending ? '⏳' : '🔑';
+  dom.authBannerText.textContent = pending
+    ? (auth.message || 'Waiting for the Microsoft sign-in to complete…')
+    : `Session expired — sign in again to resume refreshing.${auth.message ? ` (${auth.message})` : ''}`;
+  // While a sign-in is already in flight, a second click would only queue
+  // another one behind it.
+  /** @type {HTMLButtonElement} */ (dom.btnReauth).disabled = pending;
 }
 
 function renderLastRefreshed() {
@@ -584,6 +606,10 @@ dom.favoritesOnly.addEventListener('change', () => {
 
 dom.btnRefresh.addEventListener('click', () => {
   post({ type: 'refresh' });
+});
+
+dom.btnReauth.addEventListener('click', () => {
+  post({ type: 'reauthenticate' });
 });
 
 dom.btnAddTenant.addEventListener('click', () => {
