@@ -202,6 +202,7 @@ export class DocumentationPanel {
     <ul class="feat">
       <li><strong>Add a tenant</strong> — click <kbd>+ Add Tenant</kbd> in the dashboard (or the FabricPulse sidebar) and enter a display name plus your Azure Tenant ID (a GUID).</li>
       <li><strong>Sign in</strong> — on first refresh FabricPulse acquires an Azure token via your default browser. The dashboard refreshes live as soon as the page opens.</li>
+      <li><strong>Staying signed in</strong> — the token is renewed in the background before it expires, so refreshing never stops on its own. If a renewal does need you, a banner appears at the top of the dashboard with a <kbd>Sign in</kbd> button (and a VS Code notification, in case the panel is in a background tab).</li>
       <li><strong>Pick a workspace</strong> — use the workspace picker to focus on one workspace, or leave it on <em>All workspaces</em> to monitor everything.</li>
     </ul>
     <div class="callout">

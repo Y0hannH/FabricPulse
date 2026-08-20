@@ -1,5 +1,5 @@
 import fetch from 'node-fetch';
-import { AuthService, POWERBI_SCOPE, ONELAKE_SCOPE } from './authService';
+import { AuthService, FABRIC_SCOPE, POWERBI_SCOPE, ONELAKE_SCOPE } from './authService';
 import { Workspace, Pipeline, PipelineRun, RunStatus, Lakehouse, LakehouseTable } from '../models/types';
 import { ScheduleDef, ScheduleInfo, combineSchedules } from './scheduleService';
 
@@ -130,31 +130,65 @@ interface PbiListResponse<T> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export class FabricApiService {
-  constructor(private readonly auth: AuthService) {}
+  constructor(public readonly auth: AuthService) {}
 
-  // ─── Internal helpers — Fabric API ────────────────────────────────────────
+  // ─── Authenticated fetch ──────────────────────────────────────────────────
 
-  private async request<T>(tenantId: string, path: string, options?: { method?: string; body?: string }): Promise<T> {
-    const token = await this.auth.getToken(tenantId);
-    const url = `${BASE_URL}${path}`;
-
-    const response = await fetchWithRetry(
+  /** Every authenticated call goes through here so 401s are handled uniformly.
+   *
+   *  A 401 is retried once against a freshly minted token: the old one had
+   *  simply expired, and dropping just that token lets MSAL renew silently from
+   *  its refresh token. Only when the replay *also* returns 401 is the
+   *  credential itself considered dead and discarded — which is what forces the
+   *  full interactive sign-in. Doing that on the first 401 (as before) threw
+   *  away a perfectly good refresh token and popped a browser window for what
+   *  was just an expired access token. */
+  private async _authedFetch(
+    tenantId: string,
+    scope: string,
+    url: string,
+    label: string,
+    options?: { method?: string; body?: string; json?: boolean },
+  ): Promise<import('node-fetch').Response> {
+    const send = async (token: string) => fetchWithRetry(
       () => fetch(url, {
         method: options?.method ?? 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
+          ...(options?.json ? { 'Content-Type': 'application/json' } : {}),
         },
         body: options?.body,
         timeout: FETCH_TIMEOUT_MS,
       }),
-      path.split('?')[0],
+      label,
     );
 
+    const response = await send(await this.auth.getToken(tenantId, scope));
+    if (response.status !== 401) return response;
+
+    console.warn(`[FabricPulse] 401 on ${label} — renewing the access token and replaying once`);
+    this.auth.clearAccessToken(tenantId, scope);
+    const retried = await send(await this.auth.getToken(tenantId, scope));
+
+    if (retried.status === 401) {
+      console.warn(`[FabricPulse] 401 on ${label} after renewal — credential is no longer valid, re-authentication required`);
+      this.auth.clearCredential(tenantId);
+    }
+    return retried;
+  }
+
+  // ─── Internal helpers — Fabric API ────────────────────────────────────────
+
+  private async request<T>(tenantId: string, path: string, options?: { method?: string; body?: string }): Promise<T> {
+    const url = `${BASE_URL}${path}`;
+
+    const response = await this._authedFetch(tenantId, FABRIC_SCOPE, url, path.split('?')[0], {
+      method: options?.method,
+      body: options?.body,
+      json: true,
+    });
+
     if (!response.ok) {
-      if (response.status === 401) {
-        this.auth.clearCredential(tenantId);
-      }
       let detail = '';
       try { const err = await response.json() as { message?: string; errorCode?: string }; detail = err.message ?? err.errorCode ?? ''; } catch { /* ignore */ }
       throw new Error(`Fabric API error ${response.status} on ${path.split('?')[0]}${detail ? `: ${detail}` : ''}`);
@@ -183,21 +217,11 @@ export class FabricApiService {
         break;
       }
 
-      // Refresh token on each page to avoid expiry during long pagination sequences
-      const token = await this.auth.getToken(tenantId);
-      const currentUrl = url;
-      const response = await fetchWithRetry(
-        () => fetch(currentUrl, {
-          headers: { 'Authorization': `Bearer ${token}` },
-          timeout: FETCH_TIMEOUT_MS,
-        }),
-        path.split('?')[0],
-      );
+      // Token is re-read on each page (from cache) so a long pagination
+      // sequence can't outlive it
+      const response = await this._authedFetch(tenantId, FABRIC_SCOPE, url, path.split('?')[0]);
 
       if (!response.ok) {
-        if (response.status === 401) {
-          this.auth.clearCredential(tenantId);
-        }
         throw new Error(`Fabric API error ${response.status} on ${path.split('?')[0]}`);
       }
 
@@ -215,26 +239,15 @@ export class FabricApiService {
 
   /** Single-page request against the Power BI REST API (different base URL + scope). */
   private async requestPbi<T>(tenantId: string, path: string, options?: { method?: string; body?: string }): Promise<T> {
-    const token = await this.auth.getToken(tenantId, POWERBI_SCOPE);
     const url = `${POWERBI_BASE_URL}${path}`;
 
-    const response = await fetchWithRetry(
-      () => fetch(url, {
-        method: options?.method ?? 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: options?.body,
-        timeout: FETCH_TIMEOUT_MS,
-      }),
-      `[PBI] ${path.split('?')[0]}`,
-    );
+    const response = await this._authedFetch(tenantId, POWERBI_SCOPE, url, `[PBI] ${path.split('?')[0]}`, {
+      method: options?.method,
+      body: options?.body,
+      json: true,
+    });
 
     if (!response.ok) {
-      if (response.status === 401) {
-        this.auth.clearCredential(tenantId);
-      }
       throw new Error(`Power BI API error ${response.status} on ${path.split('?')[0]}`);
     }
 
@@ -253,21 +266,11 @@ export class FabricApiService {
     while (url) {
       if (pages >= MAX_PAGES || results.length >= MAX_ITEMS) break;
 
-      // Refresh token on each page to avoid expiry during long pagination sequences
-      const token = await this.auth.getToken(tenantId, POWERBI_SCOPE);
-      const currentUrl = url;
-      const response = await fetchWithRetry(
-        () => fetch(currentUrl, {
-          headers: { 'Authorization': `Bearer ${token}` },
-          timeout: FETCH_TIMEOUT_MS,
-        }),
-        `[PBI] ${path.split('?')[0]}`,
-      );
+      // Token is re-read on each page (from cache) so a long pagination
+      // sequence can't outlive it
+      const response = await this._authedFetch(tenantId, POWERBI_SCOPE, url, `[PBI] ${path.split('?')[0]}`);
 
       if (!response.ok) {
-        if (response.status === 401) {
-          this.auth.clearCredential(tenantId);
-        }
         throw new Error(`Power BI API error ${response.status} on ${path.split('?')[0]}`);
       }
 
@@ -459,25 +462,14 @@ export class FabricApiService {
   /** Returns the new job instance ID (or 'triggered' when the API returns 202 with no body). */
   async triggerPipeline(tenantId: string, workspaceId: string, pipelineId: string): Promise<string> {
     assertUuids(workspaceId, pipelineId);
-    const token = await this.auth.getToken(tenantId);
     const path = `/workspaces/${workspaceId}/dataPipelines/${pipelineId}/jobs/instances?jobType=Pipeline`;
     const url = `${BASE_URL}${path}`;
 
-    const response = await fetchWithRetry(
-      () => fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: '{}',
-        timeout: FETCH_TIMEOUT_MS,
-      }),
-      path.split('?')[0],
-    );
+    const response = await this._authedFetch(tenantId, FABRIC_SCOPE, url, path.split('?')[0], {
+      method: 'POST', body: '{}', json: true,
+    });
 
     if (!response.ok) {
-      if (response.status === 401) this.auth.clearCredential(tenantId);
       throw new Error(`Fabric API error ${response.status} on ${path.split('?')[0]}`);
     }
 
@@ -523,25 +515,14 @@ export class FabricApiService {
    *  (or 'triggered' when the API returns 202 with no body). */
   async triggerNotebook(tenantId: string, workspaceId: string, notebookId: string): Promise<string> {
     assertUuids(workspaceId, notebookId);
-    const token = await this.auth.getToken(tenantId);
     const path = `/workspaces/${workspaceId}/items/${notebookId}/jobs/instances?jobType=RunNotebook`;
     const url = `${BASE_URL}${path}`;
 
-    const response = await fetchWithRetry(
-      () => fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: '{}',
-        timeout: FETCH_TIMEOUT_MS,
-      }),
-      path.split('?')[0],
-    );
+    const response = await this._authedFetch(tenantId, FABRIC_SCOPE, url, path.split('?')[0], {
+      method: 'POST', body: '{}', json: true,
+    });
 
     if (!response.ok) {
-      if (response.status === 401) this.auth.clearCredential(tenantId);
       throw new Error(`Fabric API error ${response.status} on ${path.split('?')[0]}`);
     }
 
@@ -587,25 +568,14 @@ export class FabricApiService {
    *  Unlike pipelines/notebooks, Copy Jobs use jobType=Execute. */
   async triggerCopyJob(tenantId: string, workspaceId: string, copyJobId: string): Promise<string> {
     assertUuids(workspaceId, copyJobId);
-    const token = await this.auth.getToken(tenantId);
     const path = `/workspaces/${workspaceId}/items/${copyJobId}/jobs/instances?jobType=Execute`;
     const url = `${BASE_URL}${path}`;
 
-    const response = await fetchWithRetry(
-      () => fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: '{}',
-        timeout: FETCH_TIMEOUT_MS,
-      }),
-      path.split('?')[0],
-    );
+    const response = await this._authedFetch(tenantId, FABRIC_SCOPE, url, path.split('?')[0], {
+      method: 'POST', body: '{}', json: true,
+    });
 
     if (!response.ok) {
-      if (response.status === 401) this.auth.clearCredential(tenantId);
       throw new Error(`Fabric API error ${response.status} on ${path.split('?')[0]}`);
     }
 
@@ -680,24 +650,14 @@ export class FabricApiService {
    *  POST returns 202 Accepted. */
   async triggerSemanticModelRefresh(tenantId: string, workspaceId: string, modelId: string): Promise<string> {
     assertUuids(workspaceId, modelId);
-    const token = await this.auth.getToken(tenantId, POWERBI_SCOPE);
     const url = `${POWERBI_BASE_URL}/groups/${workspaceId}/datasets/${modelId}/refreshes`;
 
-    const response = await fetchWithRetry(
-      () => fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ notifyOption: 'NoNotification' }),
-        timeout: FETCH_TIMEOUT_MS,
-      }),
-      '[PBI] /groups/.../datasets/.../refreshes',
+    const response = await this._authedFetch(
+      tenantId, POWERBI_SCOPE, url, '[PBI] /groups/.../datasets/.../refreshes',
+      { method: 'POST', body: JSON.stringify({ notifyOption: 'NoNotification' }), json: true },
     );
 
     if (!response.ok) {
-      if (response.status === 401) this.auth.clearCredential(tenantId);
       throw new Error(`Power BI API error ${response.status} on refresh trigger`);
     }
 
@@ -803,14 +763,12 @@ export class FabricApiService {
    *  Returns undefined when no schedule is configured (404) or on a non-fatal error. */
   async getSemanticModelSchedule(tenantId: string, workspaceId: string, modelId: string): Promise<ScheduleInfo | undefined> {
     assertUuids(workspaceId, modelId);
-    const token = await this.auth.getToken(tenantId, POWERBI_SCOPE);
     const url = `${POWERBI_BASE_URL}/groups/${workspaceId}/datasets/${modelId}/refreshSchedule`;
 
     let response: import('node-fetch').Response;
     try {
-      response = await fetchWithRetry(
-        () => fetch(url, { headers: { 'Authorization': `Bearer ${token}` }, timeout: FETCH_TIMEOUT_MS }),
-        '[PBI] /groups/.../datasets/.../refreshSchedule',
+      response = await this._authedFetch(
+        tenantId, POWERBI_SCOPE, url, '[PBI] /groups/.../datasets/.../refreshSchedule',
       );
     } catch (err) {
       console.warn(`[FabricPulse] Could not fetch refresh schedule for model ${modelId}:`, err);
@@ -820,7 +778,6 @@ export class FabricApiService {
     // 404 — no scheduled refresh configured (common, and the case for DirectQuery models)
     if (response.status === 404) return undefined;
     if (!response.ok) {
-      if (response.status === 401) this.auth.clearCredential(tenantId);
       return undefined; // non-fatal — schedule is a best-effort enrichment
     }
 
@@ -927,7 +884,6 @@ export class FabricApiService {
     directory: string,
     recursive = false,
   ): Promise<{ name: string; isDirectory: boolean; contentLength: number }[]> {
-    const token = await this.auth.getToken(tenantId, ONELAKE_SCOPE);
     const results: { name: string; isDirectory: boolean; contentLength: number }[] = [];
     let continuation: string | undefined;
     let pages = 0;
@@ -936,20 +892,12 @@ export class FabricApiService {
       let url = `${ONELAKE_BASE}/${workspaceId}?resource=filesystem&recursive=${recursive}&directory=${directory}`;
       if (continuation) url += `&continuation=${encodeURIComponent(continuation)}`;
 
-      const response = await fetchWithRetry(
-        () => fetch(url, {
-          method: 'GET',
-          headers: { 'Authorization': `Bearer ${token}` },
-          timeout: FETCH_TIMEOUT_MS,
-        }),
-        'onelake list paths',
-      );
+      const response = await this._authedFetch(tenantId, ONELAKE_SCOPE, url, 'onelake list paths');
 
       // 404 — the Tables folder (or schema) does not exist yet: treat as empty
       if (response.status === 404) return results;
 
       if (!response.ok) {
-        if (response.status === 401) this.auth.clearCredential(tenantId);
         let detail = '';
         try { const err = await response.json() as { error?: { message?: string } }; detail = err.error?.message ?? ''; } catch { /* ignore */ }
         throw new Error(`OneLake API error ${response.status} listing tables${detail ? `: ${detail}` : ''}`);
@@ -1060,7 +1008,6 @@ export class FabricApiService {
       throw new Error(`Invalid schema name: ${options.schemaName}`);
     }
 
-    const token = await this.auth.getToken(tenantId);
     const path = `/workspaces/${workspaceId}/items/${lakehouseId}/jobs/TableMaintenance/instances`;
     const url = `${BASE_URL}${path}`;
 
@@ -1085,21 +1032,11 @@ export class FabricApiService {
 
     const body = JSON.stringify({ executionData });
 
-    const response = await fetchWithRetry(
-      () => fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body,
-        timeout: FETCH_TIMEOUT_MS,
-      }),
-      path,
-    );
+    const response = await this._authedFetch(tenantId, FABRIC_SCOPE, url, path, {
+      method: 'POST', body, json: true,
+    });
 
     if (!response.ok) {
-      if (response.status === 401) this.auth.clearCredential(tenantId);
       let detail = '';
       try { const err = await response.json() as { message?: string; errorCode?: string }; detail = err.message ?? err.errorCode ?? ''; } catch { /* ignore */ }
       throw new Error(`Fabric API error ${response.status} on table maintenance for "${tableName}"${detail ? `: ${detail}` : ''}`);

@@ -2,6 +2,18 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
+## [1.9.1] - 2026-08-20
+
+### Fixed
+- **Auto-refresh no longer stops when the token expires**: when a token expired and the renewal needed an interactive sign-in, the acquisition never returned. The polling loop scheduled its next tick only *after* awaiting the refresh, so it stopped for good — and because the loading flag stayed set, the Refresh button was silently debounced away too. The only way out was closing and reopening the panel. Four changes fix it:
+  - The polling loop now schedules its next tick *before* running the refresh, so a refresh that throws or hangs costs at most one skipped cycle instead of ending auto-refresh
+  - A 401 now drops only the expired access token and replays the request once; the credential — and its refresh token — is discarded only if the replay also returns 401. Previously any 401 wiped the credential and forced a full browser sign-in for what was usually just an expired token
+  - Token acquisition is capped at 120 s, and a refresh stuck for more than 3 minutes releases the loading flag so the Refresh button keeps working. Concurrent sign-ins are deduplicated, so a timed-out call never opens a second browser window, and a sign-in completed late still populates the cache
+  - Tokens are now renewed in the background 5 minutes before expiry, off the refresh path. When a sign-in is genuinely required, a banner appears at the top of the dashboard with a **Sign in** button (plus a VS Code notification) instead of a browser tab opening unannounced
+
+### Changed
+- **Expired Azure CLI sessions fall back to the browser**: when `az login` credentials were picked up at startup and the CLI session later expired, every refresh failed until the user ran `az login` again. FabricPulse now falls back to interactive sign-in automatically
+
 ## [1.9.0] - 2026-07-16
 
 ### Added

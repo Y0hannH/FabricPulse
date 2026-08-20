@@ -5,6 +5,7 @@ import * as crypto from 'crypto';
 import { FabricApiService } from '../services/fabricApi';
 import { StorageService } from '../services/storageService';
 import { AlertService } from '../services/alertService';
+import { AuthState } from '../services/authService';
 import { ScheduleInfo } from '../services/scheduleService';
 import {
   Tenant,
@@ -28,6 +29,17 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 function isUuid(s: string): boolean {
   return UUID_RE.test(s);
 }
+
+/** A refresh still running after this long is stuck, not slow — every network
+ *  call is capped well below it (30 s per request, 120 s per token acquisition).
+ *  Past this point the loading flag is released so the Refresh button works
+ *  again instead of being debounced away forever. */
+const STUCK_REFRESH_MS = 3 * 60_000;
+
+/** How often the token is renewed in the background. Well under the token's own
+ *  lifetime, so the renewal — and any sign-in it turns out to need — happens
+ *  between polls rather than in the middle of one. */
+const TOKEN_PREWARM_MS = 5 * 60_000;
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -63,6 +75,16 @@ export class DashboardPanel {
   /** itemId → last fetched schedule info. Kept across the cache/fetch phases of a
    *  refresh so the "Next Run" column doesn't flicker; cleared on tenant/workspace change. */
   private _schedulesById = new Map<string, ScheduleInfo>();
+
+  /** Epoch ms at which the in-progress refresh started — the watchdog reads it
+   *  to tell a slow refresh from a stuck one. */
+  private _loadingStartedAt = 0;
+  /** Incremented per refresh so a refresh released by the watchdog can no longer
+   *  clobber the state of the one that replaced it. */
+  private _refreshSeq = 0;
+  /** Latest auth phase, mirrored into the webview state as the re-auth banner. */
+  private _authState: { phase: 'pending' | 'failed'; message?: string } | undefined;
+  private _prewarmTimer: ReturnType<typeof setInterval> | undefined;
 
   // ─── Factory ────────────────────────────────────────────────────────────────
 
@@ -124,7 +146,69 @@ export class DashboardPanel {
       this._disposables,
     );
 
+    this._disposables.push(
+      this._fabricApi.auth.onDidChangeAuthState(state => this._onAuthStateChange(state)),
+    );
+
+    // Renew the token in the background, between polls. Because AuthService
+    // renews well before expiry, a sign-in that turns out to be needed is
+    // surfaced (banner + notification) while the current token still works —
+    // instead of blocking the refresh that first hits the expired one.
+    this._prewarmTimer = setInterval(() => {
+      if (this._disposed || !this._currentTenantId) return;
+      void this._fabricApi.auth.prewarm(this._currentTenantId);
+    }, TOKEN_PREWARM_MS);
+
     this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+  }
+
+  /** Mirrors the auth phase into the webview and, on failure, raises a VS Code
+   *  notification — the panel may well be in a background tab. */
+  private _onAuthStateChange(state: AuthState): void {
+    if (this._disposed || state.tenantId !== this._currentTenantId) return;
+    // Healthy renewals are the common case — nothing to redraw when the banner
+    // is already down.
+    if (state.phase === 'idle' && !this._authState) return;
+
+    const previous = this._authState?.phase;
+
+    this._authState = state.phase === 'idle'
+      ? undefined
+      : { phase: state.phase, message: state.message };
+
+    // Only on the transition into 'failed', so a tenant that keeps failing
+    // doesn't produce a notification per refresh.
+    if (state.phase === 'failed' && previous !== 'failed') {
+      void vscode.window
+        .showWarningMessage(
+          `FabricPulse: sign-in required — ${state.message ?? 'the session has expired.'}`,
+          'Sign in',
+        )
+        .then(choice => { if (choice === 'Sign in') void this._reauthenticate(); });
+    }
+
+    this._postState();
+  }
+
+  /** Discards the credential and acquires a fresh one, then reloads. Behind the
+   *  banner's "Sign in" button and the notification action. */
+  private async _reauthenticate(): Promise<void> {
+    if (!this._currentTenantId) return;
+
+    this._authState = { phase: 'pending', message: 'Signing in…' };
+    this._postState();
+
+    try {
+      await this._fabricApi.auth.signIn(this._currentTenantId);
+      this._authState = undefined;
+      this._post({ type: 'toast', message: 'Signed in to Microsoft Fabric.', level: 'success' });
+      await this.refresh(true);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this._authState = { phase: 'failed', message };
+      this._post({ type: 'toast', message: `Sign-in failed: ${message}`, level: 'error' });
+      this._postState();
+    }
   }
 
   // ─── Public ──────────────────────────────────────────────────────────────────
@@ -135,7 +219,16 @@ export class DashboardPanel {
   }
 
   public async refresh(force = false, initialLoad = false): Promise<void> {
-    if (this._isLoading) return; // debounce concurrent refreshes
+    if (this._isLoading) {
+      // Debounce concurrent refreshes — unless the flag is stale. A refresh that
+      // hung (typically on an expired token) used to leave it set for good,
+      // which silently swallowed every later refresh, the Refresh button
+      // included. Past STUCK_REFRESH_MS the flag is released and this refresh
+      // proceeds; _refreshSeq keeps the abandoned one from writing state.
+      if (Date.now() - this._loadingStartedAt < STUCK_REFRESH_MS) return;
+      console.warn('[FabricPulse] Previous refresh never completed — releasing the loading flag');
+      this._isLoading = false;
+    }
 
     if (!this._currentTenantId) {
       this._postState();
@@ -152,6 +245,10 @@ export class DashboardPanel {
     }
 
     this._isLoading = true;
+    this._loadingStartedAt = Date.now();
+    const seq = ++this._refreshSeq;
+    /** False once a later refresh has taken over — this one must stop writing state. */
+    const isCurrent = () => seq === this._refreshSeq;
     this._postState();
 
     const cfg = vscode.workspace.getConfiguration('fabricPulse');
@@ -457,12 +554,18 @@ export class DashboardPanel {
       this._lastRefreshed = new Date().toISOString();
       await this._alertService.checkAlerts(this._pipelines);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this._post({ type: 'toast', message: msg, level: 'error' });
+      if (isCurrent()) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this._post({ type: 'toast', message: msg, level: 'error' });
+      }
     } finally {
-      this._isLoading = false;
-      this._batchProgress = undefined;
-      this._postState();
+      // A refresh the watchdog gave up on must not clear the flag of the one
+      // now running, nor overwrite its state.
+      if (isCurrent()) {
+        this._isLoading = false;
+        this._batchProgress = undefined;
+        this._postState();
+      }
     }
   }
 
@@ -560,8 +663,13 @@ export class DashboardPanel {
         await this.refresh(true);
         break;
 
+      case 'reauthenticate':
+        await this._reauthenticate();
+        break;
+
       case 'selectTenant':
         this._currentTenantId = msg.tenantId;
+        this._authState = undefined; // auth state is per-tenant
         this._workspaces = [];
         this._pipelines = [];
         this._selectedWorkspaceId = '';
@@ -966,6 +1074,7 @@ export class DashboardPanel {
       isFromCache: this._isFromCache,
       isLoading: this._isLoading,
       batchProgress: this._batchProgress,
+      auth: this._authState,
     };
     this._post({ type: 'updateState', state });
   }
@@ -1004,6 +1113,10 @@ export class DashboardPanel {
 
   public dispose(): void {
     this._disposed = true;
+    if (this._prewarmTimer !== undefined) {
+      clearInterval(this._prewarmTimer);
+      this._prewarmTimer = undefined;
+    }
     DashboardPanel.currentPanel = undefined;
     this._panel.dispose();
     this._disposables.forEach(d => d.dispose());

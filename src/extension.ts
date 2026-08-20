@@ -46,10 +46,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // fabricPulse.openDashboard ─────────────────────────────────────────────
     vscode.commands.registerCommand('fabricPulse.openDashboard', () => {
-      const panel = DashboardPanel.createOrShow(
+      DashboardPanel.createOrShow(
         context.extensionUri, fabricApi, _storage, _alertService, context,
       );
-      startPolling(panel);
+      startPolling();
     }),
 
     // fabricPulse.openLakehouses ────────────────────────────────────────────
@@ -168,6 +168,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     dispose: () => {
       stopPolling();
       _alertService.dispose();
+      authService.dispose();
       _storage.close();
     },
   });
@@ -177,31 +178,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 // ─── Polling loop ─────────────────────────────────────────────────────────────
 
-function startPolling(panel: DashboardPanel): void {
+function startPolling(): void {
   stopPolling();
 
-  // Use a recursive setTimeout so the interval re-reads the config on every
-  // tick — changes in VS Code settings apply immediately without a restart.
-  const tick = async () => {
+  // Re-reads the config on every tick — changes in VS Code settings apply
+  // immediately without a restart.
+  const scheduleNext = (): void => {
+    const current = DashboardPanel.currentPanel;
+    if (!current) {
+      stopPolling();
+      return;
+    }
+    const intervalSecs = vscode.workspace
+      .getConfiguration('fabricPulse')
+      .get<number>('pollingInterval', 60);
+    current.setNextRefreshAt(new Date(Date.now() + intervalSecs * 1000).toISOString());
+    _pollingTimer = setTimeout(tick, intervalSecs * 1000);
+  };
+
+  // The next tick is scheduled *before* the refresh runs, so the cadence never
+  // depends on whether — or how long — this one finishes. A refresh that throws
+  // or hangs (an expired token waiting on an interactive sign-in used to hang
+  // indefinitely) now costs at most a skipped cycle instead of stopping
+  // auto-refresh until the panel is reopened; the panel debounces an
+  // overlapping refresh on its own.
+  const tick = async (): Promise<void> => {
     if (!DashboardPanel.currentPanel) {
       stopPolling();
       return;
     }
-    await DashboardPanel.currentPanel.refresh();
-    const intervalSecs = vscode.workspace
-      .getConfiguration('fabricPulse')
-      .get<number>('pollingInterval', 60);
-    const nextAt = new Date(Date.now() + intervalSecs * 1000).toISOString();
-    DashboardPanel.currentPanel?.setNextRefreshAt(nextAt);
-    _pollingTimer = setTimeout(tick, intervalSecs * 1000);
+    scheduleNext();
+    try {
+      await DashboardPanel.currentPanel.refresh();
+    } catch (err: unknown) {
+      console.warn('[FabricPulse] Polling refresh failed — the loop continues:', err);
+    }
   };
 
-  const intervalSecs = vscode.workspace
-    .getConfiguration('fabricPulse')
-    .get<number>('pollingInterval', 60);
-  const nextAt = new Date(Date.now() + intervalSecs * 1000).toISOString();
-  panel.setNextRefreshAt(nextAt);
-  _pollingTimer = setTimeout(tick, intervalSecs * 1000);
+  scheduleNext();
 }
 
 function stopPolling(): void {
