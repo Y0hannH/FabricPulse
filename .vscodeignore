@@ -12,7 +12,7 @@ src/services/**
 .gitignore
 tsconfig.json
 esbuild.js
-.eslintrc.json
+eslint.config.js
 
 # Dependencies (bundled by esbuild)
 node_modules/**

@@ -2,6 +2,20 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
+## [1.10.0] - 2026-09-16
+
+### Added
+- **Lakehouse Overview — Refresh all**: a new **↻ Refresh all** button in *Storage analysis* re-measures every table in the current scope (all tables, or the selected schema). Previously **Analyze** only covered tables never measured and disappeared once they all were, so after an Optimize / Vacuum the only way to update the ranking was one ↻ per row. Tables are refreshed largest first so the visible ranking is corrected first; current sizes stay on screen (with ⏳) until replaced, the ranking updates live, and the run can be cancelled. The whole scope is re-measured — not just the 15 visible rows — because a table below the top 15 can move into it after maintenance
+
+### Fixed
+- **Duplicate items and GUID names in the dashboard**: in favorites-only mode, refreshing a favorite that had no run recorded yet saved the item's GUID as its display name (and the workspace GUID as its workspace name). Because the cached view was built with `SELECT DISTINCT` over run history, an item recorded under both its GUID and its real name then appeared **twice** in the dashboard, and a workspace could appear twice in the picker. Favorites now store their item and workspace names when starred, and the cached view keeps one row per item using the most recent name — which also cleans up rows affected by the bug. Existing favorites get their names back-filled from history on first launch (local database schema v5)
+- **Starred items with no run history were missing from the dashboard**: the cached view was built from run history only, so an item starred before its first run stayed invisible until it ran — and so did its workspace in the picker. They are now listed (statistics show "—" until a run is recorded), and the favorites refresh updates the row as soon as a run is fetched
+- **Lakehouse Overview — refresh race**: clicking a row's ↻ while a batch was running marked the whole batch as finished; cancelling a batch left ⏳ spinners stuck on the tables it skipped. Row refresh is now unavailable during a batch, and cancelling clears the spinners
+- **Documentation page**: the *Item Types* section still described three item types; it now covers Copy Jobs and dbt Jobs, including why the run button is hidden for dbt Jobs (not triggerable via the API while in preview). The type-pill lists and the quick-action description were updated to match
+
+### Changed
+- **Developer tooling — linting restored**: ESLint 10 no longer reads `.eslintrc.json`, so `npm run lint` had been failing outright. The config was migrated to `eslint.config.js` (flat config) with the same rules. Two rule renames surfaced in the process: `no-var-requires` became `no-require-imports`, and the new `preserve-caught-error` rule caught an SQL.js initialization error that discarded its original cause (now attached). TypeScript `lib` moved from ES2020 to ES2022 to allow `Error` causes — the extension already runs on Node 18
+
 ## [1.9.1] - 2026-08-20
 
 ### Fixed

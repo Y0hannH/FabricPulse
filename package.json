@@ -2,7 +2,7 @@
   "name": "fabricpulse",
   "displayName": "FabricPulse",
   "description": "Real-time Microsoft Fabric pipeline monitor for VS Code",
-  "version": "1.9.1",
+  "version": "1.10.0",
   "publisher": "evolve-data",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -177,6 +177,7 @@
     "sql.js": "^1.12.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^20.11.0",
     "@types/node-fetch": "^2.6.11",
     "@types/sql.js": "^1.4.9",

@@ -87,6 +87,12 @@ export interface Favorite {
   alertEnabled: boolean;
   durationThresholdMs?: number;
   itemType?: string; // 'pipeline' (default) | 'semanticModel' | 'notebook' | 'copyJob' | 'dbtJob'
+  /** Names captured when the item was starred. The favorites-only refresh path
+   *  rebuilds its view from pipeline_runs, so a favorite with no run recorded
+   *  yet is absent from it — without these it had no name to persist and wrote
+   *  the GUID. Undefined for favorites starred before this was stored. */
+  displayName?: string;
+  workspaceName?: string;
 }
 
 // ─── Lakehouse models ────────────────────────────────────────────────────────
