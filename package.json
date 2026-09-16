@@ -2,7 +2,7 @@
   "name": "fabricpulse",
   "displayName": "FabricPulse",
   "description": "Real-time Microsoft Fabric pipeline monitor for VS Code",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "publisher": "evolve-data",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -49,6 +49,11 @@
           "id": "fabricpulse.launchView",
           "name": "FabricPulse",
           "type": "tree"
+        },
+        {
+          "id": "fabricpulse.notificationsView",
+          "name": "Notifications",
+          "type": "tree"
         }
       ]
     },
@@ -56,6 +61,10 @@
       {
         "view": "fabricpulse.launchView",
         "contents": "⚡ Monitor your Microsoft Fabric data pipelines in real time.\n\n[$(pulse) Open Dashboard](command:fabricPulse.openDashboard)\n\n[$(database) Open Lakehouses](command:fabricPulse.openLakehouses)\n\n[$(add) Add Tenant](command:fabricPulse.addTenant)\n\n[$(trash) Clear History](command:fabricPulse.clearHistory)\n\n[$(book) Open Documentation](command:fabricPulse.openDocumentation)"
+      },
+      {
+        "view": "fabricpulse.notificationsView",
+        "contents": "No notifications yet.\n\nErrors, warnings and results from the dashboard, lakehouses and alerts are kept here, so nothing is lost when a notification fades out."
       }
     ],
     "commands": [
@@ -85,6 +94,21 @@
       {
         "command": "fabricPulse.clearHistory",
         "title": "FabricPulse: Clear Local History"
+      },
+      {
+        "command": "fabricPulse.showNotifications",
+        "title": "FabricPulse: Show Notifications",
+        "icon": "$(bell)"
+      },
+      {
+        "command": "fabricPulse.clearNotifications",
+        "title": "FabricPulse: Clear Notifications",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "fabricPulse.copyNotification",
+        "title": "Copy Notification",
+        "icon": "$(copy)"
       }
     ],
     "menus": {
@@ -106,6 +130,30 @@
         },
         {
           "command": "fabricPulse.clearHistory"
+        },
+        {
+          "command": "fabricPulse.showNotifications"
+        },
+        {
+          "command": "fabricPulse.clearNotifications"
+        },
+        {
+          "command": "fabricPulse.copyNotification",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "fabricPulse.clearNotifications",
+          "when": "view == fabricpulse.notificationsView",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "fabricPulse.copyNotification",
+          "when": "view == fabricpulse.notificationsView && viewItem == fabricPulseNotification",
+          "group": "inline"
         }
       ]
     },
@@ -160,6 +208,13 @@
           },
           "default": [],
           "description": "Workspaces to exclude from pipeline refresh. Accepts workspace IDs (GUIDs) or display names (case-insensitive)."
+        },
+        "fabricPulse.maintenanceConcurrency": {
+          "type": "number",
+          "default": 15,
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Maximum number of table maintenance jobs running at the same time during bulk maintenance (default: 15). The next table starts as soon as one finishes."
         }
       }
     }

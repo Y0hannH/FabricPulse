@@ -6,6 +6,8 @@ import { FabricApiService } from './services/fabricApi';
 import { AuthService } from './services/authService';
 import { StorageService } from './services/storageService';
 import { AlertService } from './services/alertService';
+import { NotificationLog, NotificationEntry } from './services/notificationLog';
+import { NotificationsView } from './views/notificationsView';
 import { Tenant } from './models/types';
 
 // Services (initialized in activate, used across commands)
@@ -20,14 +22,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // ── Initialize services ───────────────────────────────────────────────────
 
+  // Created before anything else so even a storage failure below is recorded.
+  const notificationLog = new NotificationLog(context.globalState);
+  const notificationsView = new NotificationsView(notificationLog);
+  context.subscriptions.push(
+    notificationLog,
+    notificationsView,
+    vscode.commands.registerCommand('fabricPulse.showNotifications', () =>
+      vscode.commands.executeCommand(`${NotificationsView.VIEW_ID}.focus`),
+    ),
+    vscode.commands.registerCommand('fabricPulse.clearNotifications', () => notificationLog.clear()),
+    vscode.commands.registerCommand('fabricPulse.copyNotification', async (entry?: NotificationEntry) => {
+      if (!entry) return;
+      await vscode.env.clipboard.writeText(NotificationsView.formatForClipboard(entry));
+    }),
+  );
+
   const authService = new AuthService();
-  _storage = new StorageService(context);
-  _alertService = new AlertService(_storage, context);
+  _storage = new StorageService(context, notificationLog);
+  _alertService = new AlertService(_storage, context, notificationLog);
 
   try {
     await _storage.initialize();
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
+    notificationLog.add('error', 'Storage', msg);
     vscode.window.showErrorMessage(`FabricPulse: ${msg}`, 'OK');
     return; // Extension still loads but without persistent storage
   }
@@ -47,7 +66,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // fabricPulse.openDashboard ─────────────────────────────────────────────
     vscode.commands.registerCommand('fabricPulse.openDashboard', () => {
       DashboardPanel.createOrShow(
-        context.extensionUri, fabricApi, _storage, _alertService, context,
+        context.extensionUri, fabricApi, _storage, _alertService, context, notificationLog,
       );
       startPolling();
     }),
@@ -55,7 +74,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // fabricPulse.openLakehouses ────────────────────────────────────────────
     vscode.commands.registerCommand('fabricPulse.openLakehouses', () => {
       LakehousePanel.createOrShow(
-        context.extensionUri, fabricApi, _storage, context,
+        context.extensionUri, fabricApi, _storage, context, notificationLog,
       );
     }),
 
@@ -153,7 +172,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           workspaceName: lastRun.workspaceName,
           tenantId: lastRun.tenantId,
           itemType: (lastRun.itemType as import('./models/types').ItemType) ?? 'pipeline',
-        }, _storage);
+        }, _storage, notificationLog);
       } else if (DashboardPanel.currentPanel) {
         // Fallback: refresh the dashboard if we can't find the pipeline in storage
         await DashboardPanel.currentPanel.refresh();

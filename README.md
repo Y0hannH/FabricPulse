@@ -3,7 +3,7 @@
 > Real-time pulse of your Microsoft Fabric pipelines — right inside VS Code.
 
 ![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.85-007ACC?style=flat-square&logo=visualstudiocode)
-![Version](https://img.shields.io/badge/Version-1.10.0-blue?style=flat-square)
+![Version](https://img.shields.io/badge/Version-1.11.0-blue?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-00B4D8?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-In%20Development-orange?style=flat-square)
 
@@ -25,6 +25,7 @@ You choose which pipelines matter. FabricPulse watches them, stores their histor
 | ⭐ | **Favorites** | Pin key pipelines. "Favorites only" view — loaded first on startup |
 | 📊 | **History** | Duration chart, success rate, run table — stored locally in SQLite |
 | 🔔 | **Alerts** | Native VS Code notifications on failure or threshold breach. Configurable daily report |
+| 📜 | **Notification history** | Every error, warning and result kept in a sidebar view with an unread badge — review what you missed, even after a restart |
 | ⚡ | **Quick Actions** | Re-run, Copy Run ID, Open in Fabric, View History — directly from the table |
 | 🧠 | **Pattern Detection** | Detects if a pipeline frequently fails on the same day or time range |
 | 🏢 | **Multi-tenant** | Manage multiple Azure tenants / clients from a single panel |
@@ -34,7 +35,7 @@ You choose which pipelines matter. FabricPulse watches them, stores their histor
 | 📓 | **Notebooks** | Monitor Fabric Notebook runs (durations, statuses), trigger runs, and view history |
 | 📦 | **Copy Jobs** | Monitor Fabric Copy Job runs, next scheduled run, trigger on demand, and view full history |
 | 🧪 | **dbt Jobs** *(preview)* | Monitor Fabric dbt Job runs and next scheduled run (read-only — dbt jobs in preview can't be triggered via the Fabric API) |
-| 🗄️ | **Lakehouses** | Browse lakehouses, inspect Delta tables, compute table size, refresh sizes on demand, and run Optimize/Vacuum maintenance |
+| 🗄️ | **Lakehouses** | Browse lakehouses, inspect Delta tables, compute table size, refresh sizes on demand, and run Optimize/Vacuum maintenance — in bulk with a concurrency limit and live progress, filterable by maintenance status |
 | 🔢 | **Total Executions** | Total run count displayed per pipeline to gauge execution frequency |
 | 🚀 | **Smart Loading** | Priority loading for favorites, configurable batching, instant cache on startup |
 | 🚫 | **Workspace Blacklist** | Exclude workspaces from polling (by ID or name) to reduce noise |
@@ -109,6 +110,7 @@ npm run compile
 | `fabricPulse.batchDelayMs` | `2500` | Delay between batches (ms) to avoid API rate limiting |
 | `fabricPulse.batchThreshold` | `10` | Minimum number of stale pipelines to trigger batched loading |
 | `fabricPulse.blacklistedWorkspaces` | `[]` | Workspaces excluded from polling (by ID or name) |
+| `fabricPulse.maintenanceConcurrency` | `15` | Max table maintenance jobs running at once during bulk maintenance |
 
 ---
 
@@ -117,7 +119,7 @@ npm run compile
 FabricPulse does not collect any data. Everything is stored locally:
 
 - **Run history**: SQLite in VS Code's `globalStorage` directory
-- **Favorites and config**: VS Code `globalState`
+- **Favorites, config and notification history**: VS Code `globalState`
 - No telemetry, no backend, no external calls beyond the Fabric API
 
 Default retention: **90 days**. Configurable in settings.

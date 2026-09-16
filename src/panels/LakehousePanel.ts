@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { FabricApiService } from '../services/fabricApi';
 import { StorageService } from '../services/storageService';
+import { NotificationLog } from '../services/notificationLog';
 import {
   Tenant,
   Workspace,
@@ -12,6 +13,7 @@ import {
   LakehouseState,
   LakehouseToExtMsg,
   ExtToLakehouseMsg,
+  BulkMaintenanceProgress,
 } from '../models/types';
 
 // Utility ─────────────────────────────────────────────────────────────────────
@@ -23,6 +25,33 @@ function getNonce(): string {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function isUuid(s: string): boolean {
   return UUID_RE.test(s);
+}
+
+interface MaintenanceOptions {
+  vOrder: boolean;
+  vacuum: boolean;
+  vacuumRetention?: string;
+}
+
+/** How a followed maintenance job ended — the four Fabric terminal statuses,
+ *  plus: could not start (Error), no final status in time (Timeout), no job id
+ *  to follow (Untracked), panel closed while following (Disposed). */
+type MaintenanceOutcome =
+  | 'Completed' | 'Failed' | 'Cancelled' | 'Deduped'
+  | 'Error' | 'Timeout' | 'Untracked' | 'Disposed';
+
+const TERMINAL_JOB_STATUSES = new Set(['Completed', 'Failed', 'Cancelled', 'Deduped']);
+
+/** How long a maintenance job is followed before giving up on its final status.
+ *  Was 5 minutes: shorter than an Optimize or Vacuum on a large table, which left
+ *  statuses stuck although the job did finish in Fabric. */
+const MAINTENANCE_FOLLOW_MS = 2 * 60 * 60_000;
+
+function describeMaintenance(o: MaintenanceOptions): string {
+  const parts = ['Optimize'];
+  if (o.vOrder) parts.push('V-Order');
+  if (o.vacuum) parts.push('Vacuum');
+  return parts.join(' + ');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -50,6 +79,9 @@ export class LakehousePanel {
   private _tableSizes = new Map<string, number>();
   /** Set to true to cancel an in-progress computeOverviewBatch loop. */
   private _overviewBatchCancelled = false;
+  /** Bulk maintenance in progress, per lakehouse. Held here rather than in the
+   *  webview so reopening the Overview picks the progress back up. */
+  private _bulkRuns = new Map<string, BulkMaintenanceProgress>();
 
   // ─── Factory ────────────────────────────────────────────────────────────────
 
@@ -58,6 +90,7 @@ export class LakehousePanel {
     fabricApi: FabricApiService,
     storage: StorageService,
     context: vscode.ExtensionContext,
+    notifications: NotificationLog,
   ): LakehousePanel {
     const column = vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One;
 
@@ -79,7 +112,7 @@ export class LakehousePanel {
     );
 
     LakehousePanel.currentPanel = new LakehousePanel(
-      panel, extensionUri, fabricApi, storage, context,
+      panel, extensionUri, fabricApi, storage, context, notifications,
     );
     return LakehousePanel.currentPanel;
   }
@@ -92,6 +125,7 @@ export class LakehousePanel {
     private readonly _fabricApi: FabricApiService,
     private readonly _storage: StorageService,
     private readonly _context: vscode.ExtensionContext,
+    private readonly _notifications: NotificationLog,
   ) {
     this._panel = panel;
 
@@ -250,6 +284,9 @@ export class LakehousePanel {
         break;
       case 'cancelOverviewBatch':
         break;
+      case 'cancelBulkMaintenance':
+        if (!isUuid(msg.lakehouseId)) return fail('bad id');
+        break;
       case 'runBulkMaintenance':
         if (!isUuid(msg.lakehouseId) || !isUuid(msg.workspaceId)) return fail('bad id');
         if (!Array.isArray(msg.tables) || msg.tables.length === 0 || msg.tables.length > 1000) return fail('bad tables');
@@ -347,47 +384,18 @@ export class LakehousePanel {
 
       case 'copyConnectionString':
         await vscode.env.clipboard.writeText(msg.connectionString);
-        this._post({ type: 'toast', message: 'Connection string copied to clipboard', level: 'success' });
+        this._post({ type: 'toast', message: 'Connection string copied to clipboard', level: 'success', log: false });
         break;
 
-      case 'runMaintenance': {
-        // Build a description of what's being run
-        const parts: string[] = ['Optimize'];
-        if (msg.vOrder) parts.push('V-Order');
-        if (msg.vacuum) parts.push('Vacuum');
-        const desc = parts.join(' + ');
-        // Schema-qualified key so two tables with the same name in different
-        // schemas don't collide in the maintenance store.
-        const maintKey = msg.schemaName ? `${msg.schemaName}.${msg.tableName}` : msg.tableName;
-        // Capture the tenant now — it must not change under the background poll.
-        const tenantId = this._currentTenantId;
-
-        try {
-          const result = await this._fabricApi.triggerTableMaintenance(
-            tenantId, msg.workspaceId, msg.lakehouseId, msg.tableName,
-            {
-              schemaName: msg.schemaName,
-              vOrder: msg.vOrder,
-              vacuum: msg.vacuum,
-              vacuumRetention: msg.vacuumRetention,
-            },
-          );
-          this._storage.upsertMaintenance(msg.lakehouseId, maintKey, `${desc} — InProgress`);
-          this._enrichTablesWithMaintenance(msg.lakehouseId);
-          this._postState();
-          this._post({ type: 'toast', message: `${desc} triggered for "${msg.tableName}"`, level: 'success' });
-
-          // Poll job status in background
-          if (result.jobInstanceId) {
-            this._pollMaintenanceJob(
-              tenantId, msg.workspaceId, msg.lakehouseId, result.jobInstanceId, maintKey, desc,
-            );
-          }
-        } catch (err: unknown) {
-          this._post({ type: 'toast', message: err instanceof Error ? err.message : String(err), level: 'error' });
-        }
+      case 'runMaintenance':
+        // Not awaited: the job is followed until it ends (toasts + live status).
+        void this._maintainTable(
+          this._currentTenantId, msg.workspaceId, msg.lakehouseId,
+          { name: msg.tableName, schema: msg.schemaName },
+          { vOrder: msg.vOrder, vacuum: msg.vacuum, vacuumRetention: msg.vacuumRetention },
+          false,
+        );
         break;
-      }
 
       case 'computeTableSize': {
         try {
@@ -438,6 +446,9 @@ export class LakehousePanel {
             else if (onDisk !== undefined) t.sizeBytes = onDisk;
           }
           this._post({ type: 'overviewReady', lakehouseId: msg.lakehouseId, allTables: tables });
+          // A bulk run survives closing the Overview: resume its progress bar.
+          const bulkRun = this._bulkRuns.get(msg.lakehouseId);
+          if (bulkRun) this._postBulkProgress(bulkRun);
         } catch (err: unknown) {
           this._post({ type: 'toast', message: err instanceof Error ? err.message : String(err), level: 'error' });
         }
@@ -478,90 +489,226 @@ export class LakehousePanel {
         this._overviewBatchCancelled = true;
         break;
 
-      case 'runBulkMaintenance': {
-        const tenantId = this._currentTenantId;
-        const parts: string[] = ['Optimize'];
-        if (msg.vOrder) parts.push('V-Order');
-        if (msg.vacuum) parts.push('Vacuum');
-        const desc = parts.join(' + ');
-        const total = msg.tables.length;
-
-        for (let i = 0; i < msg.tables.length; i++) {
-          if (this._disposed) return;
-          const t = msg.tables[i];
-          const maintKey = t.schema ? `${t.schema}.${t.name}` : t.name;
-          try {
-            const result = await this._fabricApi.triggerTableMaintenance(
-              tenantId, msg.workspaceId, msg.lakehouseId, t.name,
-              { schemaName: t.schema, vOrder: msg.vOrder, vacuum: msg.vacuum, vacuumRetention: msg.vacuumRetention },
-            );
-            this._storage.upsertMaintenance(msg.lakehouseId, maintKey, `${desc} — InProgress`);
-            this._post({ type: 'bulkMaintenanceProgress', tableKey: maintKey, done: i + 1, total });
-            if (result.jobInstanceId) {
-              this._pollMaintenanceJob(tenantId, msg.workspaceId, msg.lakehouseId, result.jobInstanceId, maintKey, desc);
-            }
-          } catch (err) {
-            const errMsg = err instanceof Error ? err.message : String(err);
-            this._post({ type: 'bulkMaintenanceProgress', tableKey: maintKey, done: i + 1, total, error: errMsg });
-          }
+      case 'runBulkMaintenance':
+        if (this._bulkRuns.has(msg.lakehouseId)) {
+          this._post({
+            type: 'toast',
+            message: 'Bulk maintenance is already running on this lakehouse — stop it or wait for it to finish.',
+            level: 'warning',
+          });
+          break;
         }
-        this._enrichTablesWithMaintenance(msg.lakehouseId);
-        this._postState();
+        // Not awaited: a bulk run can take hours, and progress is pushed as it goes.
+        void this._runBulkMaintenance(msg);
+        break;
+
+      case 'cancelBulkMaintenance': {
+        const run = this._bulkRuns.get(msg.lakehouseId);
+        if (run && !run.stopping) {
+          run.stopping = true; // workers stop taking tables; running jobs finish
+          this._postBulkProgress(run);
+        }
         break;
       }
     }
   }
 
-  // ─── Job polling ─────────────────────────────────────────────────────────
+  // ─── Table maintenance ───────────────────────────────────────────────────
 
-  private async _pollMaintenanceJob(
+  /** Triggers maintenance on one table and follows the job to its end. Every
+   *  status change is persisted and pushed to both the Tables panel and the
+   *  Overview, so neither has to be reopened to see a job finish.
+   *
+   *  bulk=false (one table): the start and the outcome are toasts.
+   *  bulk=true: nothing is toasted per table — the progress bar covers it — but
+   *  failures go to the notification history, with their reason. */
+  private async _maintainTable(
+    tenantId: string,
+    workspaceId: string,
+    lakehouseId: string,
+    table: { name: string; schema?: string },
+    options: MaintenanceOptions,
+    bulk: boolean,
+  ): Promise<MaintenanceOutcome> {
+    const desc = describeMaintenance(options);
+    const key = table.schema ? `${table.schema}.${table.name}` : table.name;
+
+    let jobInstanceId: string | undefined;
+    try {
+      const result = await this._fabricApi.triggerTableMaintenance(
+        tenantId, workspaceId, lakehouseId, table.name,
+        { schemaName: table.schema, vOrder: options.vOrder, vacuum: options.vacuum, vacuumRetention: options.vacuumRetention },
+      );
+      jobInstanceId = result.jobInstanceId;
+    } catch (err: unknown) {
+      const reason = err instanceof Error ? err.message : String(err);
+      // Recorded as a failure (it used to leave no trace) so the table shows up
+      // under the Overview's "Failed" filter and can be re-run from there.
+      this._setMaintenanceStatus(lakehouseId, key, `${desc} — Failed`, reason);
+      const text = `${desc} could not start on "${key}": ${reason}`;
+      if (bulk) this._notifications.add('error', 'Lakehouses', text);
+      else this._post({ type: 'toast', message: text, level: 'error' });
+      return 'Error';
+    }
+
+    this._setMaintenanceStatus(lakehouseId, key, `${desc} — InProgress`);
+    if (!bulk) this._post({ type: 'toast', message: `${desc} triggered for "${key}"`, level: 'success' });
+
+    // No job id to follow (the API answered 202 without one): the status stays
+    // InProgress, as it always has in that case.
+    if (!jobInstanceId) return 'Untracked';
+
+    return this._followMaintenanceJob(tenantId, workspaceId, lakehouseId, jobInstanceId, key, desc, bulk);
+  }
+
+  private async _followMaintenanceJob(
     tenantId: string,
     workspaceId: string,
     lakehouseId: string,
     jobInstanceId: string,
-    maintKey: string,
+    key: string,
     desc: string,
-  ): Promise<void> {
-    const POLL_INTERVAL_MS = 5_000;
-    const MAX_POLLS = 60; // 5 min max
-    const TERMINAL = new Set(['Completed', 'Failed', 'Cancelled', 'Deduped']);
+    bulk: boolean,
+  ): Promise<MaintenanceOutcome> {
+    // Tighter for a single table, which the user is watching; looser in bulk,
+    // where up to maintenanceConcurrency jobs are followed at once.
+    const intervalMs = bulk ? 10_000 : 5_000;
+    const deadline = Date.now() + MAINTENANCE_FOLLOW_MS;
+    let lastStatus = 'InProgress';
 
-    for (let i = 0; i < MAX_POLLS; i++) {
-      await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
-      if (this._disposed) return;
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, intervalMs));
+      if (this._disposed) return 'Disposed';
 
+      let job: Awaited<ReturnType<FabricApiService['getJobInstance']>>;
       try {
-        const job = await this._fabricApi.getJobInstance(
-          tenantId, workspaceId, lakehouseId, jobInstanceId,
-        );
-
-        const statusLabel = `${desc} — ${job.status}`;
-        this._storage.upsertMaintenance(lakehouseId, maintKey, statusLabel);
-
-        // Update UI if this lakehouse is currently expanded
-        if (this._expandedLakehouseId === lakehouseId) {
-          this._enrichTablesWithMaintenance(lakehouseId);
-          this._postState();
-        }
-
-        if (TERMINAL.has(job.status)) {
-          const level = job.status === 'Completed' ? 'success' : 'error';
-          const failMsg = job.failureReason ? ` — ${job.failureReason}` : '';
-          this._post({
-            type: 'toast',
-            message: `${desc} on "${maintKey}": ${job.status}${failMsg}`,
-            level,
-          });
-          return;
-        }
+        job = await this._fabricApi.getJobInstance(tenantId, workspaceId, lakehouseId, jobInstanceId);
       } catch (err) {
         console.warn(`[FabricPulse] Error polling maintenance job ${jobInstanceId}:`, err);
-        // Continue polling — transient errors shouldn't stop tracking
+        continue; // transient errors shouldn't stop tracking
+      }
+
+      if (job.status !== lastStatus) {
+        lastStatus = job.status;
+        this._setMaintenanceStatus(lakehouseId, key, `${desc} — ${job.status}`, job.failureReason);
+      }
+
+      if (TERMINAL_JOB_STATUSES.has(job.status)) {
+        // Deduped: Fabric dropped it because the same job was already running.
+        const ok = job.status === 'Completed' || job.status === 'Deduped';
+        const text = `${desc} on "${key}": ${job.status}${job.failureReason ? ` — ${job.failureReason}` : ''}`;
+        if (!bulk) this._post({ type: 'toast', message: text, level: ok ? 'success' : 'error' });
+        else if (!ok) this._notifications.add('error', 'Lakehouses', text);
+        return job.status as MaintenanceOutcome;
       }
     }
 
-    // Timeout — update status
-    this._storage.upsertMaintenance(lakehouseId, maintKey, `${desc} — Timeout (still running?)`);
+    this._setMaintenanceStatus(lakehouseId, key, `${desc} — Timeout (still running?)`);
+    const text = `${desc} on "${key}": no final status after ${MAINTENANCE_FOLLOW_MS / 3_600_000} h — it may still be running in Fabric`;
+    if (bulk) this._notifications.add('warning', 'Lakehouses', text);
+    else this._post({ type: 'toast', message: text, level: 'warning' });
+    return 'Timeout';
+  }
+
+  /** Runs maintenance over many tables with at most maintenanceConcurrency jobs
+   *  running at once. Previously every table was triggered back to back without
+   *  waiting for any job to end, so 200 tables meant 200 concurrent Spark jobs on
+   *  the capacity — the likely source of the failures seen in bulk runs.
+   *
+   *  A pool rather than fixed batches: the next table starts as soon as any job
+   *  ends. Same ceiling on the capacity as batches of that size, without every
+   *  batch waiting on its slowest table. */
+  private async _runBulkMaintenance(msg: Extract<LakehouseToExtMsg, { type: 'runBulkMaintenance' }>): Promise<void> {
+    const tenantId = this._currentTenantId;
+    const lakehouseName = this._lakehouses.find(l => l.id === msg.lakehouseId)?.displayName ?? msg.lakehouseId;
+    const options: MaintenanceOptions = { vOrder: msg.vOrder, vacuum: msg.vacuum, vacuumRetention: msg.vacuumRetention };
+    const configured = vscode.workspace.getConfiguration('fabricPulse').get<number>('maintenanceConcurrency', 15);
+    const concurrency = Math.max(1, Math.min(50, Math.floor(configured) || 15));
+
+    const queue = [...msg.tables];
+    const run: BulkMaintenanceProgress = {
+      lakehouseId: msg.lakehouseId,
+      desc: describeMaintenance(options),
+      total: queue.length,
+      queued: queue.length,
+      running: 0,
+      completed: 0,
+      failed: 0,
+      unknown: 0,
+      concurrency,
+      stopping: false,
+      finished: false,
+    };
+    /** Jobs started but no longer followed because the panel closed. */
+    let interrupted = 0;
+
+    this._bulkRuns.set(msg.lakehouseId, run);
+    this._postBulkProgress(run);
+
+    const worker = async (): Promise<void> => {
+      while (queue.length > 0 && !run.stopping && !this._disposed) {
+        const table = queue.shift()!;
+        run.queued--;
+        run.running++;
+        this._postBulkProgress(run);
+
+        let outcome: MaintenanceOutcome;
+        try {
+          outcome = await this._maintainTable(tenantId, msg.workspaceId, msg.lakehouseId, table, options, true);
+        } catch (err) {
+          console.warn('[FabricPulse] Unexpected bulk maintenance error:', err);
+          outcome = 'Error';
+        }
+
+        run.running--;
+        switch (outcome) {
+          case 'Completed': case 'Deduped':                 run.completed++; break;
+          case 'Failed': case 'Cancelled': case 'Error':     run.failed++; break;
+          case 'Timeout': case 'Untracked':                  run.unknown++; break;
+          case 'Disposed':                                   interrupted++; break;
+        }
+        this._postBulkProgress(run);
+      }
+    };
+
+    try {
+      await Promise.all(Array.from({ length: Math.min(concurrency, run.total) }, () => worker()));
+    } finally {
+      run.finished = true;
+      this._bulkRuns.delete(msg.lakehouseId);
+      this._postBulkProgress(run);
+
+      const parts = [`${run.completed} completed`];
+      if (run.failed)  parts.push(`${run.failed} failed`);
+      if (run.unknown) parts.push(`${run.unknown} with no final status`);
+      if (run.queued)  parts.push(`${run.queued} not started`);
+      const verb = this._disposed ? 'interrupted (Lakehouses panel closed)' : run.stopping ? 'stopped' : 'finished';
+      const tail = interrupted > 0 ? ` — ${interrupted} job(s) already started keep running in Fabric` : '';
+      // _post records the toast before checking for disposal, so this summary
+      // reaches the notification history even when the panel is already gone.
+      this._post({
+        type: 'toast',
+        level: run.failed || run.unknown || run.queued || interrupted ? 'warning' : 'success',
+        message: `Bulk ${run.desc} on "${lakehouseName}" ${verb}: ${parts.join(', ')}${tail}`,
+      });
+    }
+  }
+
+  private _postBulkProgress(run: BulkMaintenanceProgress): void {
+    this._post({ type: 'bulkMaintenanceProgress', progress: { ...run } });
+  }
+
+  /** Persists a table's maintenance status and pushes it to whichever view shows it. */
+  private _setMaintenanceStatus(lakehouseId: string, key: string, status: string, failureReason?: string): void {
+    this._storage.upsertMaintenance(lakehouseId, key, status);
+    this._post({
+      type: 'maintenanceStatus',
+      lakehouseId,
+      tableKey: key,
+      status,
+      at: new Date().toISOString(),
+      failureReason,
+    });
     if (this._expandedLakehouseId === lakehouseId) {
       this._enrichTablesWithMaintenance(lakehouseId);
       this._postState();
@@ -623,6 +770,12 @@ export class LakehousePanel {
   }
 
   private _post(msg: ExtToLakehouseMsg): void {
+    // Toasts fade out after a few seconds, so each one is also recorded — before
+    // the disposed check, since one the user never got to see matters most.
+    // Info toasts are progress chatter ("Loading history…") and aren't kept.
+    if (msg.type === 'toast' && msg.level !== 'info' && msg.log !== false) {
+      this._notifications.add(msg.level, 'Lakehouses', msg.message);
+    }
     if (this._disposed) return;
     this._panel.webview.postMessage(msg);
   }

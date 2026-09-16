@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import type { Database as SqlDatabase } from 'sql.js';
 import { StoredRun, Annotation, Favorite, PatternWarning } from '../models/types';
+import { NotificationLog } from './notificationLog';
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -24,7 +25,10 @@ export class StorageService {
   /** When true, _trackOp will not trigger a reopen (e.g. inside a transaction). */
   private _inTransaction = false;
 
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly notifications?: NotificationLog,
+  ) {}
 
   // ─── Init ─────────────────────────────────────────────────────────────────
 
@@ -68,6 +72,7 @@ export class StorageService {
         const backupPath = this.dbPath + '.corrupted';
         try { fs.renameSync(this.dbPath, backupPath); } catch { /* best-effort */ }
         this.db = new this._SQL.Database();
+        this.notifications?.add('warning', 'Storage', 'Local database was corrupted and has been reset. History data was lost.');
         vscode.window.showWarningMessage(
           'FabricPulse: Local database was corrupted and has been reset. History data was lost.',
         );
