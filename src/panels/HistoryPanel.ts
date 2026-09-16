@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { StorageService } from '../services/storageService';
+import { NotificationLog } from '../services/notificationLog';
 import { Pipeline, HistoryData, HistoryToExtMsg, ExtToHistoryMsg } from '../models/types';
 
 /** Cryptographically secure nonce for CSP. Never use Math.random() for nonces. */
@@ -26,6 +27,7 @@ export class HistoryPanel {
     extensionUri: vscode.Uri,
     pipeline: Pipeline,
     storage: StorageService,
+    notifications: NotificationLog,
   ): void {
     const existing = HistoryPanel._panels.get(pipeline.id);
     if (existing) {
@@ -45,7 +47,7 @@ export class HistoryPanel {
       },
     );
 
-    new HistoryPanel(panel, extensionUri, pipeline, storage);
+    new HistoryPanel(panel, extensionUri, pipeline, storage, notifications);
   }
 
   // ─── Constructor ─────────────────────────────────────────────────────────────
@@ -55,6 +57,7 @@ export class HistoryPanel {
     private readonly _extensionUri: vscode.Uri,
     private readonly _pipeline: Pipeline,
     private readonly _storage: StorageService,
+    private readonly _notifications: NotificationLog,
   ) {
     this._panel = panel;
     HistoryPanel._panels.set(_pipeline.id, this);
@@ -163,7 +166,7 @@ export class HistoryPanel {
         });
         if (uri) {
           fs.writeFileSync(uri.fsPath, csv, 'utf-8');
-          this._post({ type: 'toast', message: 'CSV exported', level: 'success' });
+          this._post({ type: 'toast', message: 'CSV exported', level: 'success', log: false });
         }
         break;
       }
@@ -177,7 +180,7 @@ export class HistoryPanel {
         });
         if (uri) {
           fs.writeFileSync(uri.fsPath, json, 'utf-8');
-          this._post({ type: 'toast', message: 'JSON exported', level: 'success' });
+          this._post({ type: 'toast', message: 'JSON exported', level: 'success', log: false });
         }
         break;
       }
@@ -187,6 +190,11 @@ export class HistoryPanel {
   // ─── Helpers ─────────────────────────────────────────────────────────────────
 
   private _post(msg: ExtToHistoryMsg): void {
+    // Toasts fade out after a few seconds, so each one is also recorded.
+    // Info toasts are progress chatter ("Loading history…") and aren't kept.
+    if (msg.type === 'toast' && msg.level !== 'info' && msg.log !== false) {
+      this._notifications.add(msg.level, 'History', msg.message);
+    }
     this._panel.webview.postMessage(msg);
   }
 

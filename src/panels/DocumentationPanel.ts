@@ -277,7 +277,10 @@ export class DocumentationPanel {
     <ul class="feat">
       <li><strong>Browse tables</strong> — expand a lakehouse to list its tables (supports both classic and schema-enabled lakehouses).</li>
       <li><strong>Table size</strong> — compute the on-disk size of any table, or batch-compute all of them in the overview. After an Optimize or Vacuum, <kbd>↻ Refresh all</kbd> re-measures every table so the largest-tables ranking reflects the reclaimed space.</li>
-      <li><strong>Maintenance</strong> — run Optimize, V-Order and Vacuum on individual tables or in bulk; job status is polled and reported.</li>
+      <li><strong>Maintenance</strong> — run Optimize, V-Order and Vacuum on individual tables or in bulk. Each job is followed to its end and its status updates live in the table list and the overview.</li>
+      <li><strong>Bulk maintenance</strong> — <kbd>🔧 Maintain N shown</kbd> runs on the tables currently listed, at most <code>maintenanceConcurrency</code> jobs at a time (default 15): the next table starts as soon as one finishes, so a large selection doesn't overload the capacity. A progress bar shows completed, failed, running and queued tables; <kbd>■ Stop</kbd> prevents new tables from starting while running jobs finish. One summary notification is shown at the end — per-table failures, with their reason, go to the Notifications view.</li>
+      <li><strong>Status filter</strong> — in the overview, filter the table list by maintenance status (Failed, In progress, Optimized, Never) with the selector or by clicking a <em>Maintenance health</em> counter. Filtered lists include unmeasured tables, so failed tables can be found and re-run in one go. Hover a failed status (ⓘ) for the failure reason.</li>
+      <li><strong>Show more / Show all</strong> — the overview lists 15 tables at a time; <kbd>Show all</kbd> displays the whole list.</li>
       <li><strong>SQL endpoint</strong> — copy the lakehouse connection string.</li>
       <li><strong>Open in Fabric</strong> — deep link to the lakehouse in the portal.</li>
     </ul>
@@ -289,6 +292,7 @@ export class DocumentationPanel {
       <li><strong>Failure alerts</strong> — failed runs surface automatically as VS Code notifications.</li>
       <li><strong>Daily report</strong> — a summary notification at a configurable time (default 18:00).</li>
       <li><strong>Pattern detection</strong> — FabricPulse warns when an item fails repeatedly on the same day or within the same time window.</li>
+      <li><strong>Notification history</strong> — the <em>Notifications</em> view in the FabricPulse sidebar keeps every error, warning and result (dashboard, lakehouses, history, alerts, sign-in), newest first, so nothing is lost when a notification fades out. A badge shows how many arrived since you last looked; hover an entry for the full message, copy it with the inline action, or clear the list from the view toolbar. The last 500 entries are kept across restarts.</li>
     </ul>
   </section>
 
@@ -344,6 +348,11 @@ export class DocumentationPanel {
           <td>[]</td>
           <td>Workspaces to exclude from refresh. Accepts workspace IDs (GUIDs) or display names (case-insensitive).</td>
         </tr>
+        <tr>
+          <td><code>fabricPulse.maintenanceConcurrency</code></td>
+          <td>15</td>
+          <td>Maximum number of table maintenance jobs running at the same time during bulk maintenance (1–50).</td>
+        </tr>
       </tbody>
     </table>
   </section>
@@ -358,6 +367,8 @@ export class DocumentationPanel {
       <li><code>FabricPulse: Add Tenant</code></li>
       <li><code>FabricPulse: Export History (CSV)</code></li>
       <li><code>FabricPulse: Clear Local History</code></li>
+      <li><code>FabricPulse: Show Notifications</code></li>
+      <li><code>FabricPulse: Clear Notifications</code></li>
     </ul>
   </section>
 

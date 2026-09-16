@@ -2,6 +2,23 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
+## [1.11.0] - 2026-09-16
+
+### Added
+- **Notification history**: a new **Notifications** view in the FabricPulse sidebar keeps every error, warning and result — from the dashboard, lakehouses, history panels, alerts and sign-in — newest first, so nothing is lost when a notification fades out or is dismissed unread. A badge on the view (and the FabricPulse activity icon) counts what arrived since you last looked; hover an entry for the full message, copy it with the inline action, or clear the list from the view toolbar. The last 500 entries are kept across restarts. Pure UI confirmations ("copied", "loading…") are not recorded. New commands: `FabricPulse: Show Notifications`, `FabricPulse: Clear Notifications`
+- **Lakehouse Overview — filter by maintenance status**: the table list can be filtered on *Failed*, *In progress*, *Optimized* or *Never* with a selector in its header, or by clicking a *Maintenance health* counter. A filtered list includes tables whose size was never measured, so failed tables can be found without scrolling and re-run in one go with **Maintain N shown**. Hovering a failed status (ⓘ) shows the failure reason
+- **Lakehouse Overview — Show all**: next to *Show 15 more*, **Show all** displays the whole list
+- **Bulk maintenance — concurrency limit and progress**: bulk maintenance now runs at most `fabricPulse.maintenanceConcurrency` jobs at a time (new setting, default 15, 1–50); the next table starts as soon as one finishes. A progress bar above the table list shows completed, failed, running and queued tables, and **■ Stop** prevents new tables from starting while running jobs finish. Closing and reopening the Overview picks the progress back up
+
+### Fixed
+- **Bulk maintenance overloaded the capacity**: every table was triggered back to back without waiting for any job to end, so maintaining 200 tables meant 200 concurrent Spark jobs — the likely cause of the failures seen on large selections. See the concurrency limit above
+- **Bulk maintenance notification flood**: each finished job raised its own notification. A bulk run now ends with a single summary; per-table failures, with their reason, go to the Notifications view. Tables that could not even be started were silently ignored — they are now recorded as *Failed*, so they show under the Failed filter
+- **"Last maint." did not update until the Overview was reopened**: job status changes are now pushed live to the Overview (they only reached the expanded Tables panel before)
+- **Maintenance status stuck on "InProgress" / "Timeout"**: a job was followed for 5 minutes only — less than an Optimize or Vacuum on a large table. Jobs are now followed for up to 2 hours
+- **Maintenance health counts didn't add up**: *Cancelled*, *Deduped*, *NotStarted* and *Timeout* statuses were counted in no category. Every table now falls in exactly one (Cancelled → Failed, Deduped → Optimized, NotStarted / Timeout → In progress), and the counts follow the selected schema
+- **Lakehouse Overview — table filter lost focus after each character**: the modal was redrawn on every keystroke (and on every progress update), dropping focus from *Filter tables…* and scrolling the list back to the top. Focus, caret position and scroll position are now kept
+- **Lakehouse Overview — filter box misaligned**: *Filter tables…* sat 5 px above the controls next to it (a dialog-form margin applied to it)
+
 ## [1.10.0] - 2026-09-16
 
 ### Added

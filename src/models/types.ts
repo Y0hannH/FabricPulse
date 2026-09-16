@@ -154,16 +154,34 @@ export type LakehouseToExtMsg =
   | { type: 'computeOverviewBatch'; lakehouseId: string; workspaceId: string; tables: Array<{ name: string; schema?: string }> }
   | { type: 'cancelOverviewBatch' }
   | { type: 'runBulkMaintenance'; lakehouseId: string; workspaceId: string;
-      tables: Array<{ name: string; schema?: string }>; vOrder: boolean; vacuum: boolean; vacuumRetention?: string };
+      tables: Array<{ name: string; schema?: string }>; vOrder: boolean; vacuum: boolean; vacuumRetention?: string }
+  | { type: 'cancelBulkMaintenance'; lakehouseId: string };
+
+/** Live state of a bulk maintenance run, pushed to the Overview. */
+export interface BulkMaintenanceProgress {
+  lakehouseId: string;
+  desc: string;        // e.g. 'Optimize + V-Order + Vacuum'
+  total: number;
+  queued: number;      // not started yet
+  running: number;     // started, no final status yet
+  completed: number;   // Completed or Deduped
+  failed: number;      // Failed, Cancelled, or could not start
+  unknown: number;     // no final status within the follow window, or no job id
+  concurrency: number;
+  stopping: boolean;   // stop requested: no new table starts, running jobs finish
+  finished: boolean;
+}
 
 // Messages sent FROM extension TO lakehouse webview
 export type ExtToLakehouseMsg =
   | { type: 'updateState'; state: LakehouseState }
   | { type: 'sizeComputed'; tableName: string; schemaName?: string }
-  | { type: 'toast'; message: string; level: 'info' | 'success' | 'error' | 'warning' }
+  | { type: 'toast'; message: string; level: 'info' | 'success' | 'error' | 'warning'; log?: boolean }
   | { type: 'overviewReady'; lakehouseId: string; allTables: LakehouseTable[] }
   | { type: 'overviewBatchProgress'; tableKey: string; sizeBytes: number; done: number; total: number; cancelled?: boolean }
-  | { type: 'bulkMaintenanceProgress'; tableKey: string; done: number; total: number; error?: string };
+  | { type: 'bulkMaintenanceProgress'; progress: BulkMaintenanceProgress }
+  /** One table's maintenance status changed (started, progressed, ended). */
+  | { type: 'maintenanceStatus'; lakehouseId: string; tableKey: string; status: string; at: string; failureReason?: string };
 
 // ─── Pattern detection ────────────────────────────────────────────────────────
 
@@ -230,12 +248,13 @@ export type WebviewToExtMsg =
 // Messages sent FROM extension TO webview (dashboard)
 export type ExtToDashMsg =
   | { type: 'updateState'; state: DashboardState }
-  | { type: 'toast'; message: string; level: 'info' | 'success' | 'error' | 'warning' };
+  /** log: false keeps a pure UI confirmation (e.g. "copied") out of the notification history. */
+  | { type: 'toast'; message: string; level: 'info' | 'success' | 'error' | 'warning'; log?: boolean };
 
 // Messages sent FROM extension TO history panel
 export type ExtToHistoryMsg =
   | { type: 'historyData'; data: HistoryData }
-  | { type: 'toast'; message: string; level: 'info' | 'success' | 'error' | 'warning' };
+  | { type: 'toast'; message: string; level: 'info' | 'success' | 'error' | 'warning'; log?: boolean };
 
 // Messages sent FROM history webview TO extension
 export type HistoryToExtMsg =

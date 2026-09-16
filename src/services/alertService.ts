@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { StorageService } from './storageService';
+import { NotificationLog } from './notificationLog';
 import { PipelineWithStatus } from '../models/types';
 
 /** Max number of alerted run IDs to keep in globalState. Old entries are
@@ -18,6 +19,7 @@ export class AlertService {
   constructor(
     private readonly storage: StorageService,
     private readonly context: vscode.ExtensionContext,
+    private readonly notifications: NotificationLog,
   ) {
     // Hydrate from persisted state
     const persisted = context.globalState.get<string[]>(ALERTED_STATE_KEY, []);
@@ -65,6 +67,7 @@ export class AlertService {
     if (status !== 'Failed') return;
     if (this._wasAlerted(runId)) return;
 
+    this.notifications.add('error', 'Alerts', `"${pipeline.displayName}" failed in workspace "${pipeline.workspaceName}"`);
     const action = await vscode.window.showErrorMessage(
       `⚡ FabricPulse: "${pipeline.displayName}" failed in workspace "${pipeline.workspaceName}"`,
       'Open Dashboard',
@@ -93,6 +96,7 @@ export class AlertService {
     const actual = formatDuration(durationMs);
     const threshold = formatDuration(pipeline.durationThresholdMs);
 
+    this.notifications.add('warning', 'Alerts', `"${pipeline.displayName}" took ${actual} (threshold: ${threshold})`);
     await vscode.window.showWarningMessage(
       `⚡ FabricPulse: "${pipeline.displayName}" took ${actual} (threshold: ${threshold})`,
       'Open Dashboard',
@@ -135,11 +139,14 @@ export class AlertService {
     const stats = this.storage.getTodayStats(tenantId);
 
     if (stats.total === 0) {
+      this.notifications.add('info', 'Alerts', 'Daily report: no pipeline runs recorded today.');
       vscode.window.showInformationMessage('📊 FabricPulse: No pipeline runs recorded today.');
       return;
     }
 
-    const msg = `📊 FabricPulse: ${stats.total} run${stats.total > 1 ? 's' : ''} today — ${stats.failed} failed`;
+    const summary = `${stats.total} run${stats.total > 1 ? 's' : ''} today — ${stats.failed} failed`;
+    this.notifications.add(stats.failed > 0 ? 'warning' : 'info', 'Alerts', `Daily report: ${summary}`);
+    const msg = `📊 FabricPulse: ${summary}`;
 
     vscode.window.showInformationMessage(msg, 'Open Dashboard').then(action => {
       if (action === 'Open Dashboard') {

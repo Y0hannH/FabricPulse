@@ -6,6 +6,7 @@ import { FabricApiService } from '../services/fabricApi';
 import { StorageService } from '../services/storageService';
 import { AlertService } from '../services/alertService';
 import { AuthState } from '../services/authService';
+import { NotificationLog } from '../services/notificationLog';
 import { ScheduleInfo } from '../services/scheduleService';
 import {
   Tenant,
@@ -95,6 +96,7 @@ export class DashboardPanel {
     storage: StorageService,
     alertService: AlertService,
     context: vscode.ExtensionContext,
+    notifications: NotificationLog,
   ): DashboardPanel {
     const column = vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One;
 
@@ -116,7 +118,7 @@ export class DashboardPanel {
     );
 
     DashboardPanel.currentPanel = new DashboardPanel(
-      panel, extensionUri, fabricApi, storage, alertService, context,
+      panel, extensionUri, fabricApi, storage, alertService, context, notifications,
     );
     return DashboardPanel.currentPanel;
   }
@@ -130,6 +132,7 @@ export class DashboardPanel {
     private readonly _storage: StorageService,
     private readonly _alertService: AlertService,
     private readonly _context: vscode.ExtensionContext,
+    private readonly _notifications: NotificationLog,
   ) {
     this._panel = panel;
 
@@ -180,6 +183,7 @@ export class DashboardPanel {
     // Only on the transition into 'failed', so a tenant that keeps failing
     // doesn't produce a notification per refresh.
     if (state.phase === 'failed' && previous !== 'failed') {
+      this._notifications.add('warning', 'Auth', `Sign-in required — ${state.message ?? 'the session has expired.'}`);
       void vscode.window
         .showWarningMessage(
           `FabricPulse: sign-in required — ${state.message ?? 'the session has expired.'}`,
@@ -857,7 +861,7 @@ export class DashboardPanel {
 
       case 'copyRunId':
         await vscode.env.clipboard.writeText(msg.runId);
-        this._post({ type: 'toast', message: 'Run ID copied to clipboard', level: 'success' });
+        this._post({ type: 'toast', message: 'Run ID copied to clipboard', level: 'success', log: false });
         break;
 
       case 'openInFabric': {
@@ -940,7 +944,7 @@ export class DashboardPanel {
         } catch (err: unknown) {
           this._post({ type: 'toast', message: err instanceof Error ? err.message : String(err), level: 'error' });
         }
-        HistoryPanel.createOrShow(this._extensionUri, target, this._storage);
+        HistoryPanel.createOrShow(this._extensionUri, target, this._storage, this._notifications);
         break;
       }
 
@@ -962,7 +966,7 @@ export class DashboardPanel {
         });
         if (uri) {
           fs.writeFileSync(uri.fsPath, csv, 'utf-8');
-          this._post({ type: 'toast', message: 'History exported', level: 'success' });
+          this._post({ type: 'toast', message: 'History exported', level: 'success', log: false });
         }
         break;
       }
@@ -1147,6 +1151,12 @@ export class DashboardPanel {
   }
 
   private _post(msg: ExtToDashMsg): void {
+    // Toasts fade out after a few seconds, so each one is also recorded — before
+    // the disposed check, since one the user never got to see matters most.
+    // Info toasts are progress chatter ("Loading history…") and aren't kept.
+    if (msg.type === 'toast' && msg.level !== 'info' && msg.log !== false) {
+      this._notifications.add(msg.level, 'Dashboard', msg.message);
+    }
     if (this._disposed) { return; }
     this._panel.webview.postMessage(msg);
   }

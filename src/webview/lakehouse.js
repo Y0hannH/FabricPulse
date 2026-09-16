@@ -42,9 +42,10 @@ let overviewSchemaFilter = '';
 let overviewTableFilter  = '';
 /** @type {Set<string>} Keys (schema.name or name) currently being size-refreshed. */
 const overviewRefreshingKeys = new Set();
-let overviewBulkMaintRunning = false;
-let overviewBulkMaintDone = 0;
-let overviewBulkMaintTotal = 0;
+/** Latest bulk maintenance progress for the open Overview (null: none to show). */
+let overviewBulk = /** @type {any} */ (null);
+/** Maintenance-health bucket the table list is filtered on ('' = largest tables). */
+let overviewMaintFilter = '';
 let overviewRenderScheduled = false;
 
 /** User-resized height of the tables panel, kept across expand/collapse. */
@@ -113,9 +114,8 @@ window.addEventListener('message', (/** @type {MessageEvent} */ ev) => {
       overviewSchemaFilter = '';
       overviewTableFilter  = '';
       overviewRefreshingKeys.clear();
-      overviewBulkMaintRunning = false;
-      overviewBulkMaintDone = 0;
-      overviewBulkMaintTotal = 0;
+      overviewBulk = null;        // re-sent by the extension if a run is active
+      overviewMaintFilter = '';
       renderOverviewModal();
       break;
     case 'overviewBatchProgress': {
@@ -133,14 +133,20 @@ window.addEventListener('message', (/** @type {MessageEvent} */ ev) => {
       scheduleOverviewRender();
       break;
     }
-    case 'bulkMaintenanceProgress': {
-      overviewBulkMaintDone = msg.done;
-      overviewBulkMaintTotal = msg.total;
-      if (msg.done >= msg.total) overviewBulkMaintRunning = false;
-      if (msg.tableKey && !msg.error) {
-        const t = overviewTables.find(tb => tableKey(tb) === msg.tableKey);
-        if (t) { t.maintenanceStatus = 'Optimize — InProgress'; t.lastMaintenanceAt = new Date().toISOString(); }
-      }
+    case 'bulkMaintenanceProgress':
+      if (msg.progress.lakehouseId !== overviewLhId) break;
+      overviewBulk = msg.progress;
+      scheduleOverviewRender();
+      break;
+    case 'maintenanceStatus': {
+      // Every status change of a followed job — so "Last maint." moves on its own
+      // instead of needing the Overview to be closed and reopened.
+      if (msg.lakehouseId !== overviewLhId) break;
+      const t = overviewTables.find(tb => tableKey(tb) === msg.tableKey);
+      if (!t) break;
+      t.maintenanceStatus = msg.status;
+      t.lastMaintenanceAt = msg.at;
+      t.maintenanceError = msg.failureReason;
       scheduleOverviewRender();
       break;
     }
@@ -939,6 +945,17 @@ function renderOverviewModal() {
   const wsid  = overlay.dataset.wsid  ?? '';
   const lh = state.lakehouses.find(l => l.id === lhid);
 
+  // body.innerHTML is rebuilt on every render — on each keystroke in the filter
+  // box, and every few seconds while a maintenance or size batch reports
+  // progress. That dropped focus after one typed character and snapped the
+  // table list back to the top. Capture both, restore them after the rebuild.
+  const focusedEl   = /** @type {any} */ (document.activeElement);
+  const focusedId   = focusedEl && body.contains(focusedEl) ? focusedEl.id : '';
+  const selStart    = focusedId && typeof focusedEl.selectionStart === 'number' ? focusedEl.selectionStart : null;
+  const selEnd      = focusedId && typeof focusedEl.selectionEnd === 'number' ? focusedEl.selectionEnd : null;
+  const bodyScroll  = body.scrollTop;
+  const tableScroll = /** @type {HTMLElement|null} */ (body.querySelector('.overview-table-wrap'))?.scrollTop ?? 0;
+
   // ── Schema list ─────────────────────────────────────────────────────────────
   const allSchemas = /** @type {string[]} */ (
     [...new Set(overviewTables.map(t => t.schema).filter(s => s != null && s !== ''))].sort()
@@ -960,19 +977,28 @@ function renderOverviewModal() {
   const measuredInScope    = schemaFiltered.filter(t => t.sizeBytes != null && t.sizeBytes >= 0);
   const sortedBySize       = measuredInScope.slice().sort((a, b) => (b.sizeBytes ?? 0) - (a.sizeBytes ?? 0));
 
-  // Apply name filter to the measured rows only (stats and Analyze button are unaffected)
-  const nameFilterLower    = overviewTableFilter.toLowerCase();
-  const nameFiltered       = overviewTableFilter
-    ? sortedBySize.filter(t => ((t.schema ? t.schema + '.' : '') + t.name).toLowerCase().includes(nameFilterLower))
-    : sortedBySize;
-  const visibleRows        = nameFiltered.slice(0, overviewVisibleCount);
-  const hasMoreMeasured    = nameFiltered.length > overviewVisibleCount;
+  // Maintenance health, over the tables in scope (so the counts match the list)
+  /** @type {Record<string, number>} */
+  const bucketCounts = { failed: 0, inprogress: 0, completed: 0, never: 0 };
+  for (const t of schemaFiltered) bucketCounts[maintBucket(t)]++;
 
-  // Maintenance health (all tables)
-  const maintCompleted  = overviewTables.filter(t => t.maintenanceStatus?.includes('Completed')).length;
-  const maintFailed     = overviewTables.filter(t => t.maintenanceStatus?.includes('Failed')).length;
-  const maintInProgress = overviewTables.filter(t => t.maintenanceStatus?.includes('InProgress')).length;
-  const maintNever      = overviewTables.filter(t => !t.maintenanceStatus).length;
+  // Rows: the largest measured tables — or, with a status filter, every table in
+  // that status. A failed table isn't necessarily measured, so the filtered list
+  // also includes unmeasured tables (after the measured ones, by name).
+  const nameFilterLower = overviewTableFilter.toLowerCase();
+  const nameMatches = (/** @type {any} */ t) =>
+    !overviewTableFilter || tableKey(t).toLowerCase().includes(nameFilterLower);
+  let candidates = sortedBySize;
+  if (overviewMaintFilter) {
+    const inBucket = schemaFiltered.filter(t => maintBucket(t) === overviewMaintFilter);
+    candidates = [
+      ...inBucket.filter(isMeasured).sort((a, b) => (b.sizeBytes ?? 0) - (a.sizeBytes ?? 0)),
+      ...inBucket.filter(t => !isMeasured(t)).sort((a, b) => tableKey(a).localeCompare(tableKey(b))),
+    ];
+  }
+  const listRows    = candidates.filter(nameMatches);
+  const visibleRows = listRows.slice(0, overviewVisibleCount);
+  const hiddenCount = listRows.length - visibleRows.length;
 
   // Schema breakdown
   /** @type {Map<string, number>} */
@@ -1027,15 +1053,29 @@ function renderOverviewModal() {
         : '');
 
   // ── Top-N rows ────────────────────────────────────────────────────────────────
-  const maintAllBtn = visibleRows.length > 0 && !overviewBulkMaintRunning
-    ? '<button class="btn btn-secondary" id="overview-maint-all" style="font-size:11px">🔧 Maintain all ' + visibleRows.length + '</button>'
-    : overviewBulkMaintRunning
-      ? '<span class="muted text-xs">Triggering… ' + overviewBulkMaintDone + '/' + overviewBulkMaintTotal + '</span>'
-      : '';
+  const bulkActive  = !!overviewBulk && !overviewBulk.finished;
+  const maintAllBtn = visibleRows.length > 0 && !bulkActive
+    ? '<button class="btn btn-secondary" id="overview-maint-all" style="font-size:11px"' +
+        ' title="Run maintenance on the ' + visibleRows.length + ' tables listed below">🔧 Maintain ' + visibleRows.length + ' shown</button>'
+    : '';
+
+  const statusSelect =
+    '<select id="overview-maint-filter" class="select" style="height:24px;font-size:11px" title="Filter by maintenance status">' +
+      '<option value="">Largest tables</option>' +
+      MAINT_BUCKETS.map(([k, label]) =>
+        '<option value="' + k + '"' + (overviewMaintFilter === k ? ' selected' : '') + '>' +
+          label + ' (' + bucketCounts[k] + ')</option>'
+      ).join('') +
+    '</select>';
+
+  const bulkBlock = overviewBulk ? bulkProgressHtml(overviewBulk) : '';
 
   const tableRowsHtml = visibleRows.length === 0
     ? '<tr><td colspan="6" class="muted" style="padding:14px;text-align:center">' +
-        (overviewTableFilter && sortedBySize.length > 0
+        (overviewMaintFilter
+          ? 'No tables with status "' + esc(bucketLabel(overviewMaintFilter)) + '"' +
+              (overviewTableFilter ? ' matching "' + esc(overviewTableFilter) + '"' : '') + '.'
+          : overviewTableFilter && sortedBySize.length > 0
           ? 'No measured tables match "' + esc(overviewTableFilter) + '".'
           : overviewComputing ? 'Computing — first results will appear shortly…' : 'No sizes computed yet — click Analyze to start.') +
       '</td></tr>'
@@ -1047,11 +1087,14 @@ function renderOverviewModal() {
         const nameHtml  = t.schema
           ? '<span class="muted text-xs">' + esc(t.schema) + '.</span>' + esc(t.name)
           : esc(t.name);
-        const maintClass = t.maintenanceStatus
-          ? (t.maintenanceStatus.includes('Failed')     ? 'status-failed'
-           : t.maintenanceStatus.includes('Completed')  ? 'status-succeeded'
-           : t.maintenanceStatus.includes('InProgress') ? 'status-inprogress' : '')
-          : '';
+        const bucket = maintBucket(t);
+        const maintClass = bucket === 'failed'    ? 'status-failed'
+                         : bucket === 'completed' ? 'status-succeeded'
+                         : bucket === 'inprogress'? 'status-inprogress' : '';
+        // Failure reasons are only known for jobs followed in this session.
+        const maintTitle = t.maintenanceError
+          ? (t.maintenanceStatus ?? '') + '\n' + t.maintenanceError
+          : (t.maintenanceStatus ?? 'Never maintained');
         const maintLabel = t.lastMaintenanceAt ? formatRelative(t.lastMaintenanceAt) : '—';
         const shortStatus = t.maintenanceStatus
           ? ' <span class="muted text-xs">(' + esc(t.maintenanceStatus.split(' — ')[0]) + ')</span>'
@@ -1070,15 +1113,24 @@ function renderOverviewModal() {
           '<td class="muted text-xs" style="width:28px;text-align:right">' + (i + 1) + '</td>' +
           '<td style="max-width:200px"><span class="pipeline-name" title="' + esc((t.schema ? t.schema + '.' : '') + t.name) + '">' + nameHtml + '</span></td>' +
           '<td style="width:90px">' + typeBadge + '</td>' +
-          '<td style="width:96px;white-space:nowrap"><span style="font-weight:600">' + esc(formatBytes(t.sizeBytes ?? 0)) + '</span>' + refreshBtn + '</td>' +
-          '<td class="' + maintClass + '" style="width:120px;font-size:11px">' + esc(maintLabel) + shortStatus + '</td>' +
+          '<td style="width:96px;white-space:nowrap"><span style="font-weight:600">' +
+            (isMeasured(t) ? esc(formatBytes(t.sizeBytes)) : '<span class="muted">—</span>') + '</span>' + refreshBtn + '</td>' +
+          '<td class="' + maintClass + '" style="width:120px;font-size:11px" title="' + esc(maintTitle) + '">' +
+            esc(maintLabel) + shortStatus + (t.maintenanceError ? ' ⓘ' : '') + '</td>' +
           '<td style="width:36px"><button class="action-btn overview-row-maint" title="Run maintenance on this table">🔧</button></td>' +
         '</tr>';
       }).join('');
 
-  const showMoreBtn = hasMoreMeasured
-    ? '<button class="btn btn-secondary" id="overview-show-more" style="margin:6px 0;font-size:11px">Show ' + Math.min(15, sortedBySize.length - overviewVisibleCount) + ' more ↓</button>'
-    : unmeasuredInScope.length > 0 && !overviewComputing
+  // "Show all" only when more than one extra page is hidden — otherwise
+  // "Show N more" already shows everything.
+  const showMoreBtn = hiddenCount > 0
+    ? '<div style="display:flex;gap:6px;margin:6px 0">' +
+        '<button class="btn btn-secondary" id="overview-show-more" style="font-size:11px">Show ' + Math.min(15, hiddenCount) + ' more ↓</button>' +
+        (hiddenCount > 15
+          ? '<button class="btn btn-secondary" id="overview-show-all" style="font-size:11px">Show all ' + listRows.length + '</button>'
+          : '') +
+      '</div>'
+    : !overviewMaintFilter && unmeasuredInScope.length > 0 && !overviewComputing
       ? '<div class="muted text-xs" style="padding:6px 0">' + unmeasuredInScope.length + ' tables not yet measured — "Analyze" for the complete ranking.</div>'
       : '';
 
@@ -1114,16 +1166,22 @@ function renderOverviewModal() {
       progressBar +
     '</div>' +
 
-    '<div class="overview-section">' +
+    '<div class="overview-section" id="overview-tables-section">' +
       '<div class="overview-section-header">' +
-        '<span>Largest tables' + (overviewSchemaFilter ? ' — ' + esc(overviewSchemaFilter) : '') + '</span>' +
+        '<span>' + (overviewMaintFilter ? MAINT_TITLES[overviewMaintFilter] + ' (' + listRows.length + ')' : 'Largest tables') +
+          (overviewSchemaFilter ? ' — ' + esc(overviewSchemaFilter) : '') + '</span>' +
         '<div style="display:flex;align-items:center;gap:8px">' +
+          statusSelect +
           '<input type="text" id="overview-table-filter" class="input" placeholder="Filter tables…"' +
             ' value="' + esc(overviewTableFilter) + '" autocomplete="off"' +
-            ' style="height:24px;font-size:11px;width:140px;flex-shrink:0" />' +
+            // margin/padding reset: the overview is a .modal, and ".modal input" (meant
+            // for dialog forms) adds a 10px bottom margin that pushed this box 5px above
+            // the select and the button next to it.
+            ' style="height:24px;font-size:11px;width:140px;flex-shrink:0;margin:0;padding:2px 6px" />' +
           maintAllBtn +
         '</div>' +
       '</div>' +
+      bulkBlock +
       '<div class="overview-table-wrap">' +
         '<table class="pipeline-table">' +
           '<thead><tr>' +
@@ -1141,12 +1199,13 @@ function renderOverviewModal() {
     '</div>' +
 
     '<div class="overview-section">' +
-      '<div class="overview-section-header">Maintenance health</div>' +
+      '<div class="overview-section-header">Maintenance health' +
+        (overviewSchemaFilter ? ' — ' + esc(overviewSchemaFilter) : '') + '</div>' +
       '<div class="overview-health">' +
-        '<span>✅ Optimized <strong>' + maintCompleted + '</strong></span>' +
-        '<span>🔄 In progress <strong>' + maintInProgress + '</strong></span>' +
-        '<span>❌ Failed <strong>' + maintFailed + '</strong></span>' +
-        '<span>⚪ Never <strong>' + maintNever + '</strong></span>' +
+        MAINT_BUCKETS.map(([k, label]) =>
+          '<span class="schema-pill health-chip' + (overviewMaintFilter === k ? ' schema-pill-active' : '') +
+            '" data-bucket="' + k + '" title="Click to list these tables">' + label + ' <strong>' + bucketCounts[k] + '</strong></span>'
+        ).join('') +
       '</div>' +
     '</div>' +
 
@@ -1154,6 +1213,17 @@ function renderOverviewModal() {
 
   // ── Apply inline styles (bypass CSS loading issues in VS Code webview) ────────
   _styleOverviewDOM(body);
+
+  body.scrollTop = bodyScroll;
+  const newWrap = /** @type {HTMLElement|null} */ (body.querySelector('.overview-table-wrap'));
+  if (newWrap) newWrap.scrollTop = tableScroll;
+  if (focusedId) {
+    const el = /** @type {any} */ (document.getElementById(focusedId));
+    if (el) {
+      el.focus();
+      if (selStart !== null && typeof el.setSelectionRange === 'function') el.setSelectionRange(selStart, selEnd);
+    }
+  }
 
   // ── Event listeners ──────────────────────────────────────────────────────────
 
@@ -1217,6 +1287,40 @@ function renderOverviewModal() {
     renderOverviewModal();
   });
 
+  /** Applies a status filter and brings the list into view (the health chips
+   *  sit below it, so without the scroll a click would seem to do nothing). */
+  const applyMaintFilter = (/** @type {string} */ bucket) => {
+    overviewMaintFilter  = bucket;
+    overviewVisibleCount = 15;
+    renderOverviewModal();
+    document.getElementById('overview-tables-section')?.scrollIntoView({ block: 'start' });
+  };
+
+  document.getElementById('overview-maint-filter')?.addEventListener('change', function () {
+    applyMaintFilter(/** @type {HTMLSelectElement} */ (this).value);
+  });
+
+  body.querySelectorAll('.health-chip[data-bucket]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const b = /** @type {HTMLElement} */ (chip).dataset.bucket ?? '';
+      applyMaintFilter(overviewMaintFilter === b ? '' : b);
+    });
+  });
+
+  document.getElementById('overview-bulk-stop')?.addEventListener('click', () => {
+    post({ type: 'cancelBulkMaintenance', lakehouseId: lhid });
+  });
+  document.getElementById('overview-bulk-show-failed')?.addEventListener('click', () => applyMaintFilter('failed'));
+  document.getElementById('overview-bulk-dismiss')?.addEventListener('click', () => {
+    overviewBulk = null;
+    renderOverviewModal();
+  });
+
+  document.getElementById('overview-show-all')?.addEventListener('click', () => {
+    overviewVisibleCount = Number.MAX_SAFE_INTEGER;
+    renderOverviewModal();
+  });
+
   document.getElementById('overview-show-more')?.addEventListener('click', () => {
     overviewVisibleCount += 15;
     renderOverviewModal();
@@ -1268,7 +1372,9 @@ function openBulkMaintenanceDialog(
   overlay.innerHTML =
     '<div class="modal" style="width:400px">' +
       '<h3>🔧 Bulk Maintenance — ' + tables.length + ' tables</h3>' +
-      '<p class="muted text-xs" style="margin-bottom:12px">Maintenance will be triggered sequentially on the ' + tables.length + ' largest measured tables.</p>' +
+      '<p class="muted text-xs" style="margin-bottom:12px">Runs on the ' + tables.length + ' tables listed, a limited number at a time' +
+        ' (setting <code>fabricPulse.maintenanceConcurrency</code>, default 15): the next table starts as soon as one finishes.' +
+        ' Progress is shown above the table list.</p>' +
       '<div class="maint-option">' +
         '<label class="maint-check-label"><input type="checkbox" id="bulk-vorder" checked /><strong>V-Order</strong></label>' +
         '<span class="muted text-xs">Optimize read performance (bin compaction)</span>' +
@@ -1303,10 +1409,8 @@ function openBulkMaintenanceDialog(
     const days   = daysEl ? Math.max(1, Math.min(365, parseInt(daysEl.value, 10) || 7)) : 7;
     const vacuumRetention = vacuum ? days + ':00:00:00' : undefined;
 
-    overviewBulkMaintRunning = true;
-    overviewBulkMaintDone    = 0;
-    overviewBulkMaintTotal   = tables.length;
-    renderOverviewModal();
+    // No local "running" state: the extension answers with the first progress
+    // message straight away (or a warning if a run is already in progress).
     overlay.remove();
 
     post({
@@ -1346,6 +1450,85 @@ function formatRelative(/** @type {string} */ iso) {
 
 function truncate(/** @type {string} */ s, /** @type {number} */ max) {
   return s.length > max ? s.slice(0, max) + '…' : s;
+}
+
+/** Maintenance-health buckets, in display order. */
+const MAINT_BUCKETS = /** @type {Array<[string, string]>} */ ([
+  ['failed',     '❌ Failed'],
+  ['inprogress', '🔄 In progress'],
+  ['completed',  '✅ Optimized'],
+  ['never',      '⚪ Never'],
+]);
+
+/** List heading when filtered on a bucket. */
+const MAINT_TITLES = /** @type {Record<string, string>} */ ({
+  failed:     'Failed tables',
+  inprogress: 'Tables in progress',
+  completed:  'Optimized tables',
+  never:      'Never-maintained tables',
+});
+
+function bucketLabel(/** @type {string} */ bucket) {
+  const hit = MAINT_BUCKETS.find(([k]) => k === bucket);
+  return hit ? hit[1].replace(/^\S+\s/, '') : bucket;   // label without its emoji
+}
+
+/** Maps a stored status ("Optimize + Vacuum — Failed") to a health bucket.
+ *  Every table lands in exactly one, so the chips add up to the table count —
+ *  previously Cancelled, Deduped, NotStarted and Timeout were counted nowhere. */
+function maintBucket(/** @type {any} */ t) {
+  const s = t.maintenanceStatus;
+  if (!s) return 'never';
+  if (s.includes('Failed') || s.includes('Cancelled')) return 'failed';     // needs a re-run
+  if (s.includes('Completed') || s.includes('Deduped')) return 'completed'; // Deduped: same job already ran
+  return 'inprogress';                                                      // InProgress, NotStarted (queued), Timeout
+}
+
+function isMeasured(/** @type {any} */ t) {
+  return t.sizeBytes != null && t.sizeBytes >= 0;
+}
+
+/** Bulk maintenance block: stacked bar (done in green, failed in red, unknown in
+ *  grey) plus counts, with Stop while running and a summary once finished. */
+function bulkProgressHtml(/** @type {any} */ b) {
+  const done = b.completed + b.failed + b.unknown;
+  const pct  = (/** @type {number} */ n) => (b.total > 0 ? (n / b.total) * 100 : 0).toFixed(2) + '%';
+  const seg  = (/** @type {number} */ n, /** @type {string} */ color) =>
+    n > 0 ? '<div style="height:100%;width:' + pct(n) + ';background:' + color + ';transition:width 0.3s ease"></div>' : '';
+
+  let headline;
+  if (!b.finished) {
+    headline = b.stopping
+      ? '⏸ Stopping — waiting for ' + b.running + ' running job' + (b.running === 1 ? '' : 's') + ' to finish'
+      : '🔧 ' + esc(b.desc) + ' — ' + done + ' / ' + b.total;
+  } else {
+    headline = (b.queued > 0 ? '⏹ Stopped' : '✔ Finished') + ' — ' + esc(b.desc) + ' on ' + done + ' / ' + b.total + ' tables';
+  }
+
+  const counts = [
+    '<span title="Completed">✅ ' + b.completed + '</span>',
+    '<span title="Failed, cancelled, or could not start">❌ ' + b.failed + '</span>',
+    b.unknown ? '<span title="No final status (still running after the follow window, or no job id)">❔ ' + b.unknown + '</span>' : '',
+    !b.finished ? '<span title="Running now (max ' + b.concurrency + ' at a time)">🔄 ' + b.running + ' running</span>' : '',
+    b.queued ? '<span title="Not started yet">⏳ ' + b.queued + (b.finished ? ' not started' : ' queued') + '</span>' : '',
+  ].filter(Boolean).join('<span class="muted"> · </span>');
+
+  const buttons = !b.finished
+    ? (b.stopping ? '' : '<button class="btn btn-secondary" id="overview-bulk-stop" style="font-size:11px;padding:1px 8px"' +
+        ' title="No new table starts; jobs already running finish">■ Stop</button>')
+    : (b.failed > 0 ? '<button class="btn btn-secondary" id="overview-bulk-show-failed" style="font-size:11px;padding:1px 8px">Show failed</button>' : '') +
+      '<button class="btn-icon" id="overview-bulk-dismiss" title="Dismiss" style="font-size:12px;padding:0 4px">✕</button>';
+
+  return '<div class="bulk-maint-block" style="border:1px solid #3c3c3c;border-radius:6px;padding:8px 10px;margin:0 0 10px">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;margin-bottom:6px">' +
+      '<span style="font-weight:600">' + headline + '</span>' +
+      '<span style="display:flex;align-items:center;gap:6px">' + buttons + '</span>' +
+    '</div>' +
+    '<div style="display:flex;height:6px;background:#3c3c3c;border-radius:3px;overflow:hidden">' +
+      seg(b.completed, '#3fb950') + seg(b.failed, '#f85149') + seg(b.unknown, '#8b949e') +
+    '</div>' +
+    '<div class="text-xs" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px">' + counts + '</div>' +
+  '</div>';
 }
 
 function tableKey(/** @type {any} */ t) {
