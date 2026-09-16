@@ -177,7 +177,7 @@ export class DocumentationPanel {
 
   <div class="hero">
     <h1>⚡ FabricPulse <span class="badge">Documentation</span></h1>
-    <p>Real-time monitoring &amp; management for Microsoft Fabric — pipelines, semantic models, notebooks and lakehouses, right inside VS Code.</p>
+    <p>Real-time monitoring &amp; management for Microsoft Fabric — pipelines, semantic models, notebooks, Copy Jobs, dbt Jobs and lakehouses, right inside VS Code.</p>
   </div>
 
   <nav class="toc">
@@ -225,13 +225,15 @@ export class DocumentationPanel {
 
   <section id="item-types">
     <h2>3 · Item Types</h2>
-    <p>FabricPulse monitors three kinds of Fabric items, each with the same set of actions and statistics:</p>
+    <p>FabricPulse monitors five kinds of Fabric items. All share the same statistics and history; all share the same actions too, except dbt Jobs, which are read-only:</p>
     <ul class="feat">
       <li><strong>Pipeline</strong> — Data Factory pipelines. Supports re-run and a deep link to run monitoring.</li>
       <li><strong>Semantic Model</strong> — Power BI / Fabric datasets. The run button triggers a dataset refresh.</li>
       <li><strong>Notebook</strong> — Fabric notebooks. The run button starts a <code>RunNotebook</code> job.</li>
+      <li><strong>Copy Job</strong> — Fabric Copy Jobs. The run button starts an <code>Execute</code> job.</li>
+      <li><strong>dbt Job</strong> <span class="muted">(preview)</span> — Fabric dbt Jobs, monitored read-only: last run, history and Next Run. The Fabric REST API cannot start a dbt job run while the feature is in preview, so the run button is hidden for this type — runs come from the schedule configured in the Fabric portal.</li>
     </ul>
-    <p class="muted">Use the type pills in the toolbar (All · Pipeline · Model · Notebook) to show one type at a time.</p>
+    <p class="muted">Use the type pills in the toolbar (All · Pipeline · Model · Notebook · Copy Job · dbt Job) to show one type at a time.</p>
   </section>
 
   <section id="filters">
@@ -239,7 +241,7 @@ export class DocumentationPanel {
     <ul class="feat">
       <li><strong>Search</strong> — type in the filter box to match item or workspace names.</li>
       <li><strong>★ Favorites</strong> — toggle to show only starred items.</li>
-      <li><strong>Type pills</strong> — All / Pipeline / Model / Notebook.</li>
+      <li><strong>Type pills</strong> — All / Pipeline / Model / Notebook / Copy Job / dbt Job.</li>
       <li><strong>Status pills</strong> — Failed, Succeeded, Never run, In Progress (multi-select).</li>
       <li><strong>Sort</strong> — click any column header to sort; click again to reverse.</li>
     </ul>
@@ -251,7 +253,7 @@ export class DocumentationPanel {
     <div class="actions-grid">
       <span class="icon">↺</span><span>Refresh the item's last run immediately.</span>
       <span class="icon">⬇</span><span>Fetch the item's full run history into the local cache.</span>
-      <span class="icon">▶ / ⟳</span><span>Re-run a pipeline, run a notebook, or trigger a model refresh. The last run auto-refreshes a few seconds later so the new status appears quickly.</span>
+      <span class="icon">▶ / ⟳</span><span>Re-run a pipeline, run a notebook or Copy Job, or trigger a model refresh. The last run auto-refreshes a few seconds later so the new status appears quickly. <span class="muted">Hidden for dbt Jobs, which cannot be triggered via the API.</span></span>
       <span class="icon">📋</span><span>Copy the latest Run ID to the clipboard.</span>
       <span class="icon">🔗</span><span>Open the item in the Fabric portal.</span>
       <span class="icon">📈</span><span>Open run monitoring in Fabric <span class="muted">(pipelines only)</span>.</span>
@@ -274,7 +276,7 @@ export class DocumentationPanel {
     <p>Open the Lakehouses view from the sidebar or command palette to inspect and maintain Fabric lakehouses.</p>
     <ul class="feat">
       <li><strong>Browse tables</strong> — expand a lakehouse to list its tables (supports both classic and schema-enabled lakehouses).</li>
-      <li><strong>Table size</strong> — compute the on-disk size of any table, or batch-compute all of them in the overview.</li>
+      <li><strong>Table size</strong> — compute the on-disk size of any table, or batch-compute all of them in the overview. After an Optimize or Vacuum, <kbd>↻ Refresh all</kbd> re-measures every table so the largest-tables ranking reflects the reclaimed space.</li>
       <li><strong>Maintenance</strong> — run Optimize, V-Order and Vacuum on individual tables or in bulk; job status is polled and reported.</li>
       <li><strong>SQL endpoint</strong> — copy the lakehouse connection string.</li>
       <li><strong>Open in Fabric</strong> — deep link to the lakehouse in the portal.</li>

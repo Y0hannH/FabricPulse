@@ -36,7 +36,6 @@ export class StorageService {
     this.dbPath = path.join(storagePath, 'fabricpulse.db');
 
     // sql.js uses WebAssembly — no native compilation needed.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const initSqlJs = require('sql.js') as (cfg?: { locateFile(f: string): string }) => Promise<{ Database: new (data?: ArrayLike<number> | Buffer | null) => SqlDatabase }>;
 
     try {
@@ -47,7 +46,7 @@ export class StorageService {
       });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(`FabricPulse: Failed to initialize SQL.js.\n${msg}`);
+      throw new Error(`FabricPulse: Failed to initialize SQL.js.\n${msg}`, { cause: err });
     }
 
     this._openDb();
@@ -172,6 +171,8 @@ export class StorageService {
         pipeline_id           TEXT    NOT NULL,
         alert_enabled         INTEGER NOT NULL DEFAULT 0,
         duration_threshold_ms INTEGER,
+        display_name          TEXT,
+        workspace_name        TEXT,
         UNIQUE(pipeline_id)
       );
 
@@ -225,17 +226,19 @@ export class StorageService {
       this.db.run('UPDATE schema_version SET version = 2');
       this._flush();
     }
+    // Shared by migrations 3 and 5.
+    const addColumn = (table: string, col: string, def: string) => {
+      try {
+        this.db.run(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+      } catch (err: unknown) {
+        // "duplicate column name" is expected if column already exists — anything else is a real error
+        const msg = err instanceof Error ? err.message : '';
+        if (!msg.includes('duplicate column')) throw err;
+      }
+    };
+
     if (current < 3) {
       // Add item_type column to pipeline_runs and favorites for semantic model support
-      const addColumn = (table: string, col: string, def: string) => {
-        try {
-          this.db.run(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
-        } catch (err: unknown) {
-          // "duplicate column name" is expected if column already exists — anything else is a real error
-          const msg = err instanceof Error ? err.message : '';
-          if (!msg.includes('duplicate column')) throw err;
-        }
-      };
       addColumn('pipeline_runs', 'item_type', "TEXT DEFAULT 'pipeline'");
       addColumn('favorites', 'item_type', "TEXT DEFAULT 'pipeline'");
       this.db.run('UPDATE schema_version SET version = 3');
@@ -244,6 +247,30 @@ export class StorageService {
     if (current < 4) {
       // lakehouse_table_sizes already created in createSchema via CREATE TABLE IF NOT EXISTS
       this.db.run('UPDATE schema_version SET version = 4');
+      this._flush();
+    }
+    if (current < 5) {
+      // Names captured at star time, so the favorites-only refresh never has to
+      // fall back to writing an item's GUID as its display name.
+      addColumn('favorites', 'display_name', 'TEXT');
+      addColumn('favorites', 'workspace_name', 'TEXT');
+      // Backfill from history for favorites starred before these columns
+      // existed, skipping rows already poisoned with the GUID.
+      this.db.run(
+        `UPDATE favorites SET display_name = (
+           SELECT r.pipeline_name FROM pipeline_runs r
+            WHERE r.pipeline_id = favorites.pipeline_id
+              AND r.pipeline_name <> favorites.pipeline_id
+            ORDER BY r.start_time DESC LIMIT 1)
+         WHERE display_name IS NULL`);
+      this.db.run(
+        `UPDATE favorites SET workspace_name = (
+           SELECT r.workspace_name FROM pipeline_runs r
+            WHERE r.workspace_id = favorites.workspace_id
+              AND r.workspace_name <> favorites.workspace_id
+            ORDER BY r.start_time DESC LIMIT 1)
+         WHERE workspace_name IS NULL`);
+      this.db.run('UPDATE schema_version SET version = 5');
       this._flush();
     }
   }
@@ -370,7 +397,12 @@ export class StorageService {
    *  Used to populate the workspace picker from cache when no live fetch is needed. */
   getKnownWorkspaces(tenantId: string): { id: string; displayName: string; tenantId: string }[] {
     const result = this.db.exec(
-      `SELECT DISTINCT workspace_id, workspace_name FROM pipeline_runs WHERE tenant_id = ?`,
+      // GROUP BY rather than DISTINCT: a workspace whose name was ever recorded
+      // differently — a GUID written by an older build, or a rename in Fabric —
+      // produced one row per spelling and so appeared twice in the picker.
+      // SQLite pairs the bare columns with the MAX() row, so the newest wins.
+      `SELECT workspace_id, workspace_name, MAX(COALESCE(start_time, created_at))
+         FROM pipeline_runs WHERE tenant_id = ? GROUP BY workspace_id`,
       [tenantId],
     );
     return this._rows(result).map(r => ({
@@ -384,9 +416,13 @@ export class StorageService {
    *  Used to rebuild the dashboard view from cache without calling the Fabric API. */
   getKnownPipelines(tenantId: string): { id: string; displayName: string; workspaceId: string; workspaceName: string; tenantId: string; itemType: string }[] {
     const result = this.db.exec(
-      `SELECT DISTINCT pipeline_id, pipeline_name, workspace_id, workspace_name,
-              COALESCE(item_type, 'pipeline') AS item_type
-       FROM pipeline_runs WHERE tenant_id = ?`,
+      // GROUP BY rather than DISTINCT, for the same reason as getKnownWorkspaces:
+      // an item recorded under two names was listed twice. Taking the MAX() row
+      // also heals GUID-named rows as soon as one real name lands.
+      `SELECT pipeline_id, pipeline_name, workspace_id, workspace_name,
+              COALESCE(item_type, 'pipeline') AS item_type,
+              MAX(COALESCE(start_time, created_at))
+       FROM pipeline_runs WHERE tenant_id = ? GROUP BY pipeline_id`,
       [tenantId],
     );
     return this._rows(result).map(r => ({
@@ -419,8 +455,11 @@ export class StorageService {
 
   addFavorite(fav: Omit<Favorite, 'id'>): void {
     this.db.run(
-      'INSERT OR IGNORE INTO favorites (tenant_id, workspace_id, pipeline_id, alert_enabled, duration_threshold_ms, item_type) VALUES (?,?,?,?,?,?)',
-      [fav.tenantId, fav.workspaceId, fav.pipelineId, fav.alertEnabled ? 1 : 0, fav.durationThresholdMs ?? null, fav.itemType ?? 'pipeline'],
+      `INSERT OR IGNORE INTO favorites
+         (tenant_id, workspace_id, pipeline_id, alert_enabled, duration_threshold_ms, item_type, display_name, workspace_name)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [fav.tenantId, fav.workspaceId, fav.pipelineId, fav.alertEnabled ? 1 : 0, fav.durationThresholdMs ?? null, fav.itemType ?? 'pipeline',
+       fav.displayName ?? null, fav.workspaceName ?? null],
     );
     this._flush();
   }
@@ -673,6 +712,8 @@ export class StorageService {
       alertEnabled:        (r['alert_enabled'] as number) === 1,
       durationThresholdMs: (r['duration_threshold_ms'] as number | null) ?? undefined,
       itemType:            (r['item_type'] as string | null) ?? 'pipeline',
+      displayName:         (r['display_name'] as string | null) ?? undefined,
+      workspaceName:       (r['workspace_name'] as string | null) ?? undefined,
     };
   }
 

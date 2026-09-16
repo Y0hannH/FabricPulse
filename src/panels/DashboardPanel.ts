@@ -16,6 +16,7 @@ import {
   WebviewToExtMsg,
   ExtToDashMsg,
   ItemType,
+  Favorite,
 } from '../models/types';
 
 // Utility ─────────────────────────────────────────────────────────────────────
@@ -274,6 +275,23 @@ export class DashboardPanel {
             isFavorite: this._storage.isWorkspaceFavorite(ws.id),
           }));
 
+          const tenantFavorites = this._storage.getFavorites()
+            .filter(f => f.tenantId === this._currentTenantId);
+
+          // getKnownWorkspaces derives from pipeline_runs, so the workspace of a
+          // favorite that has never run is missing from the picker. Add it from
+          // the name stored when the item was starred.
+          for (const fav of tenantFavorites) {
+            if (this._workspaces.some(w => w.id === fav.workspaceId)) continue;
+            const ws = {
+              id: fav.workspaceId,
+              displayName: fav.workspaceName ?? fav.workspaceId,
+              tenantId: this._currentTenantId,
+            };
+            if (isBlacklisted(ws)) continue;
+            this._workspaces.push({ ...ws, isFavorite: this._storage.isWorkspaceFavorite(ws.id) });
+          }
+
           const cachedItems = this._storage.getKnownPipelines(this._currentTenantId);
           this._pipelines = cachedItems.map(p => {
             const fav = this._storage.getFavorite(p.id);
@@ -299,6 +317,18 @@ export class DashboardPanel {
             };
           });
 
+          // Same blind spot for the items themselves: a favorite with no run
+          // recorded yet is absent from the query above and used to stay
+          // invisible until its first run landed. Show it as a row with empty
+          // statistics — it is starred, so the user expects to see it.
+          const seenIds = new Set(cachedItems.map(p => p.id));
+          const knownWsIds = new Set(this._workspaces.map(w => w.id));
+          for (const fav of tenantFavorites) {
+            if (seenIds.has(fav.pipelineId)) continue;
+            if (!knownWsIds.has(fav.workspaceId)) continue; // workspace blacklisted
+            this._pipelines.push(this._favoriteRow(fav));
+          }
+
           this._lastRefreshed = new Date().toISOString();
           this._isFromCache = true;
 
@@ -312,7 +342,7 @@ export class DashboardPanel {
           this._postState();
 
           const pollingMs = cfg.get<number>('pollingInterval', 60) * 1000;
-          const favorites = this._storage.getFavorites().filter(f => f.tenantId === this._currentTenantId);
+          const favorites = tenantFavorites;
           const wsMap = new Map(this._workspaces.map(w => [w.id, w]));
           // A forced refresh re-fetches every favorite; otherwise only stale ones.
           const staleFavorites = force
@@ -339,8 +369,8 @@ export class DashboardPanel {
                         tenantId: this._currentTenantId,
                         workspaceId: fav.workspaceId,
                         pipelineId: fav.pipelineId,
-                        pipelineName: item?.displayName ?? fav.pipelineId,
-                        workspaceName: wsMap.get(fav.workspaceId)?.displayName ?? fav.workspaceId,
+                        pipelineName: item?.displayName ?? fav.displayName ?? fav.pipelineId,
+                        workspaceName: wsMap.get(fav.workspaceId)?.displayName ?? fav.workspaceName ?? fav.workspaceId,
                         runId: run.runId,
                         status: run.status,
                         startTime: run.startTime,
@@ -359,9 +389,19 @@ export class DashboardPanel {
 
               const idx = this._pipelines.findIndex(p => p.id === fav.pipelineId);
               if (idx !== -1) {
+                // Stats are re-read rather than carried over: a favorite that had
+                // no run until a moment ago would otherwise show "0 runs" next to
+                // the run it just fetched.
+                const { rate } = this._storage.getSuccessRate(fav.pipelineId, 7);
+                const durStats = this._storage.getDurationStats(fav.pipelineId);
                 this._pipelines[idx] = {
                   ...this._pipelines[idx],
                   ...(run ? { lastRun: run } : {}),
+                  successRate7d: rate,
+                  avgDurationMs: durStats.avg,
+                  maxDurationMs: durStats.max,
+                  minDurationMs: durStats.min,
+                  cachedRunCount: this._storage.getRunCount(fav.pipelineId),
                   ...this._scheduleFields(fav.pipelineId),
                 };
               }
@@ -716,6 +756,7 @@ export class DashboardPanel {
 
       case 'toggleFavorite': {
         const isFav = this._storage.isFavorite(msg.pipelineId);
+        const pl = this._pipelines.find(p => p.id === msg.pipelineId);
         if (isFav) {
           this._storage.removeFavorite(msg.pipelineId);
         } else {
@@ -725,10 +766,14 @@ export class DashboardPanel {
             pipelineId: msg.pipelineId,
             alertEnabled: false,
             itemType: msg.itemType ?? 'pipeline',
+            // Stored now, while the names are on screen: the favorites-only
+            // refresh rebuilds its view from recorded runs, so a favorite with
+            // no run yet would otherwise have no name to persist.
+            displayName: pl?.displayName,
+            workspaceName: pl?.workspaceName,
           });
         }
         // Optimistic update in local state
-        const pl = this._pipelines.find(p => p.id === msg.pipelineId);
         if (pl) {
           pl.isFavorite = !isFav;
           if (isFav) pl.alertEnabled = false;
@@ -1052,6 +1097,28 @@ export class DashboardPanel {
     } catch (err) {
       console.warn(`[FabricPulse] schedule fetch failed for ${item.id}:`, err);
     }
+  }
+
+  /** Builds a dashboard row for a starred item with no run in local history.
+   *  The cache view is rebuilt from pipeline_runs, so such an item is absent
+   *  from it; the names come from what was captured when it was starred.
+   *  Statistics are left undefined rather than zeroed so the table renders "—"
+   *  (nothing known) instead of "0%" (ran, never succeeded). */
+  private _favoriteRow(fav: Favorite): PipelineWithStatus {
+    const ws = this._workspaces.find(w => w.id === fav.workspaceId);
+    return {
+      id: fav.pipelineId,
+      displayName: fav.displayName ?? fav.pipelineId,
+      workspaceId: fav.workspaceId,
+      workspaceName: fav.workspaceName ?? ws?.displayName ?? fav.workspaceId,
+      tenantId: fav.tenantId,
+      itemType: (fav.itemType ?? 'pipeline') as ItemType,
+      isFavorite: true,
+      alertEnabled: fav.alertEnabled,
+      durationThresholdMs: fav.durationThresholdMs,
+      cachedRunCount: 0,
+      ...this._scheduleFields(fav.pipelineId),
+    };
   }
 
   /** Schedule-derived fields for a pipeline row, read from the in-memory cache. */

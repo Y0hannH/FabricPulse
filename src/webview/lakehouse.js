@@ -127,6 +127,9 @@ window.addEventListener('message', (/** @type {MessageEvent} */ ev) => {
       overviewBatchDone = msg.done;
       overviewBatchTotal = msg.total;
       if (msg.cancelled || msg.done >= msg.total) overviewComputing = false;
+      // A cancelled "Refresh all" never reports the tables it skipped, so their
+      // ⏳ would otherwise stay up for good.
+      if (msg.cancelled) overviewRefreshingKeys.clear();
       scheduleOverviewRender();
       break;
     }
@@ -999,6 +1002,16 @@ function renderOverviewModal() {
   const analyzeBtn = !overviewComputing && unmeasuredInScope.length > 0
     ? '<button class="btn btn-primary" id="overview-analyze" style="font-size:11px">📐 Analyze ' + scopeLabel + '</button>'
     : '';
+  // Analyze only covers tables never measured, and disappears once they all are —
+  // so after an Optimize / Vacuum there was no way to re-measure the ranking.
+  // This recomputes every table in scope. Hidden while a single-row refresh is in
+  // flight: its 1/1 completion would end the batch's progress state early.
+  const refreshAllBtn = !overviewComputing && measuredInScope.length > 0 && overviewRefreshingKeys.size === 0
+    ? '<button class="btn btn-secondary" id="overview-refresh-all" style="font-size:11px"' +
+        ' title="Recompute the size of every table in this scope — use after Optimize / Vacuum.' +
+        ' Largest tables are refreshed first; current sizes stay visible until replaced.">' +
+        '↻ Refresh all ' + schemaFiltered.length + '</button>'
+    : '';
   const cancelBtn = overviewComputing
     ? '<button class="btn btn-secondary" id="overview-cancel" style="font-size:11px">■ Cancel</button>'
     : '';
@@ -1045,9 +1058,13 @@ function renderOverviewModal() {
           : '';
         const tkey = t.schema ? t.schema + '.' + t.name : t.name;
         const isRefreshing = overviewRefreshingKeys.has(tkey);
+        // No per-row ↻ while a batch runs: its own 1/1 progress message would
+        // mark the whole batch finished.
         const refreshBtn = isRefreshing
           ? '<span class="muted text-xs" style="margin-left:4px">⏳</span>'
-          : '<button class="action-btn overview-row-refresh" data-tname="' + esc(t.name) + '" data-tschema="' + esc(t.schema ?? '') + '"' +
+          : overviewComputing
+            ? ''
+            : '<button class="action-btn overview-row-refresh" data-tname="' + esc(t.name) + '" data-tschema="' + esc(t.schema ?? '') + '"' +
               ' title="Refresh size" style="opacity:1;font-size:12px;padding:0 2px;margin-left:3px">↻</button>';
         return '<tr data-tname="' + esc(t.name) + '" data-tschema="' + esc(t.schema ?? '') + '">' +
           '<td class="muted text-xs" style="width:28px;text-align:right">' + (i + 1) + '</td>' +
@@ -1092,7 +1109,7 @@ function renderOverviewModal() {
 
     '<div class="overview-section">' +
       '<div class="overview-section-header"><span>Storage analysis</span>' +
-        '<div style="display:flex;align-items:center;gap:6px">' + schemaDropdown + analyzeBtn + cancelBtn + '</div>' +
+        '<div style="display:flex;align-items:center;gap:6px">' + schemaDropdown + analyzeBtn + refreshAllBtn + cancelBtn + '</div>' +
       '</div>' +
       progressBar +
     '</div>' +
@@ -1176,9 +1193,27 @@ function renderOverviewModal() {
     });
   });
 
+  document.getElementById('overview-refresh-all')?.addEventListener('click', () => {
+    // Largest first, so the ranking the user is looking at is corrected first;
+    // never-measured tables go last.
+    const tables = [...sortedBySize, ...unmeasuredInScope];
+    overviewComputing  = true;
+    overviewBatchDone  = 0;
+    overviewBatchTotal = tables.length;
+    for (const t of sortedBySize) overviewRefreshingKeys.add(tableKey(t));
+    renderOverviewModal();
+    post({
+      type: 'computeOverviewBatch',
+      lakehouseId: lhid,
+      workspaceId: wsid,
+      tables: tables.map(t => ({ name: t.name, schema: t.schema })),
+    });
+  });
+
   document.getElementById('overview-cancel')?.addEventListener('click', () => {
     post({ type: 'cancelOverviewBatch' });
     overviewComputing = false;
+    overviewRefreshingKeys.clear();
     renderOverviewModal();
   });
 
