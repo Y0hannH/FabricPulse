@@ -380,7 +380,7 @@ export class DocumentationPanel {
   public dispose(): void {
     DocumentationPanel.currentPanel = undefined;
     this._panel.dispose();
-    this._disposables.forEach(d => d.dispose());
+    this._disposables.forEach((d) => d.dispose());
     this._disposables.length = 0;
   }
 }

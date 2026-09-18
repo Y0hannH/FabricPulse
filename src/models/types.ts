@@ -3,8 +3,8 @@
 export type ItemType = 'pipeline' | 'semanticModel' | 'notebook' | 'copyJob' | 'dbtJob';
 
 export interface Tenant {
-  id: string;       // same as tenantId, used as key
-  name: string;     // user-defined display name
+  id: string; // same as tenantId, used as key
+  name: string; // user-defined display name
   tenantId: string; // Azure tenant GUID
 }
 
@@ -24,7 +24,8 @@ export interface Pipeline {
   itemType?: ItemType; // 'pipeline' (default) | 'semanticModel' | 'notebook' | 'copyJob' | 'dbtJob'
 }
 
-export type RunStatus = 'Succeeded' | 'Failed' | 'InProgress' | 'Cancelled' | 'Queued' | 'NotStarted';
+export type RunStatus =
+  'Succeeded' | 'Failed' | 'InProgress' | 'Cancelled' | 'Queued' | 'NotStarted';
 
 export interface PipelineRun {
   id: string;
@@ -47,8 +48,8 @@ export interface PipelineWithStatus extends Pipeline {
   alertEnabled: boolean;
   durationThresholdMs?: number;
   cachedRunCount?: number;
-  nextRunAt?: string;        // ISO-8601 UTC of the next scheduled run (computed)
-  scheduleSummary?: string;  // human-readable schedule description (tooltip)
+  nextRunAt?: string; // ISO-8601 UTC of the next scheduled run (computed)
+  scheduleSummary?: string; // human-readable schedule description (tooltip)
   scheduleEnabled?: boolean; // false when a schedule exists but is paused
 }
 
@@ -74,7 +75,7 @@ export interface StoredRun {
 export interface Annotation {
   id?: number;
   pipelineId: string;
-  date: string;  // ISO date string
+  date: string; // ISO date string
   note: string;
   createdAt?: string;
 }
@@ -146,29 +147,55 @@ export type LakehouseToExtMsg =
   | { type: 'expandLakehouse'; lakehouseId: string; workspaceId: string }
   | { type: 'collapseLakehouse' }
   | { type: 'copyConnectionString'; connectionString: string }
-  | { type: 'runMaintenance'; lakehouseId: string; workspaceId: string; tableName: string;
-      schemaName?: string; vOrder: boolean; vacuum: boolean; vacuumRetention?: string }
-  | { type: 'computeTableSize'; lakehouseId: string; workspaceId: string; tableName: string; schemaName?: string }
+  | {
+      type: 'runMaintenance';
+      lakehouseId: string;
+      workspaceId: string;
+      tableName: string;
+      schemaName?: string;
+      vOrder: boolean;
+      vacuum: boolean;
+      vacuumRetention?: string;
+    }
+  | {
+      type: 'computeTableSize';
+      lakehouseId: string;
+      workspaceId: string;
+      tableName: string;
+      schemaName?: string;
+    }
   | { type: 'openInFabric'; lakehouseId: string; workspaceId: string; tenantId: string }
   | { type: 'openOverview'; lakehouseId: string; workspaceId: string }
-  | { type: 'computeOverviewBatch'; lakehouseId: string; workspaceId: string; tables: Array<{ name: string; schema?: string }> }
+  | {
+      type: 'computeOverviewBatch';
+      lakehouseId: string;
+      workspaceId: string;
+      tables: Array<{ name: string; schema?: string }>;
+    }
   | { type: 'cancelOverviewBatch' }
-  | { type: 'runBulkMaintenance'; lakehouseId: string; workspaceId: string;
-      tables: Array<{ name: string; schema?: string }>; vOrder: boolean; vacuum: boolean; vacuumRetention?: string }
+  | {
+      type: 'runBulkMaintenance';
+      lakehouseId: string;
+      workspaceId: string;
+      tables: Array<{ name: string; schema?: string }>;
+      vOrder: boolean;
+      vacuum: boolean;
+      vacuumRetention?: string;
+    }
   | { type: 'cancelBulkMaintenance'; lakehouseId: string };
 
 /** Live state of a bulk maintenance run, pushed to the Overview. */
 export interface BulkMaintenanceProgress {
   lakehouseId: string;
-  desc: string;        // e.g. 'Optimize + V-Order + Vacuum'
+  desc: string; // e.g. 'Optimize + V-Order + Vacuum'
   total: number;
-  queued: number;      // not started yet
-  running: number;     // started, no final status yet
-  completed: number;   // Completed or Deduped
-  failed: number;      // Failed, Cancelled, or could not start
-  unknown: number;     // no final status within the follow window, or no job id
+  queued: number; // not started yet
+  running: number; // started, no final status yet
+  completed: number; // Completed or Deduped
+  failed: number; // Failed, Cancelled, or could not start
+  unknown: number; // no final status within the follow window, or no job id
   concurrency: number;
-  stopping: boolean;   // stop requested: no new table starts, running jobs finish
+  stopping: boolean; // stop requested: no new table starts, running jobs finish
   finished: boolean;
 }
 
@@ -176,12 +203,31 @@ export interface BulkMaintenanceProgress {
 export type ExtToLakehouseMsg =
   | { type: 'updateState'; state: LakehouseState }
   | { type: 'sizeComputed'; tableName: string; schemaName?: string }
-  | { type: 'toast'; message: string; level: 'info' | 'success' | 'error' | 'warning'; log?: boolean }
+  | {
+      type: 'toast';
+      message: string;
+      level: 'info' | 'success' | 'error' | 'warning';
+      log?: boolean;
+    }
   | { type: 'overviewReady'; lakehouseId: string; allTables: LakehouseTable[] }
-  | { type: 'overviewBatchProgress'; tableKey: string; sizeBytes: number; done: number; total: number; cancelled?: boolean }
+  | {
+      type: 'overviewBatchProgress';
+      tableKey: string;
+      sizeBytes: number;
+      done: number;
+      total: number;
+      cancelled?: boolean;
+    }
   | { type: 'bulkMaintenanceProgress'; progress: BulkMaintenanceProgress }
   /** One table's maintenance status changed (started, progressed, ended). */
-  | { type: 'maintenanceStatus'; lakehouseId: string; tableKey: string; status: string; at: string; failureReason?: string };
+  | {
+      type: 'maintenanceStatus';
+      lakehouseId: string;
+      tableKey: string;
+      status: string;
+      at: string;
+      failureReason?: string;
+    };
 
 // ─── Pattern detection ────────────────────────────────────────────────────────
 
@@ -235,9 +281,28 @@ export type WebviewToExtMsg =
   | { type: 'rerunPipeline'; pipelineId: string; workspaceId: string; itemType?: ItemType }
   | { type: 'refreshPipeline'; pipelineId: string; workspaceId: string; itemType?: ItemType }
   | { type: 'copyRunId'; runId: string }
-  | { type: 'openInFabric'; pipelineId: string; workspaceId: string; tenantId: string; itemType?: ItemType }
-  | { type: 'viewMonitor'; pipelineId: string; workspaceId: string; runId?: string; itemType?: ItemType }
-  | { type: 'viewHistory'; pipelineId: string; workspaceId: string; pipelineName: string; workspaceName: string; itemType?: ItemType }
+  | {
+      type: 'openInFabric';
+      pipelineId: string;
+      workspaceId: string;
+      tenantId: string;
+      itemType?: ItemType;
+    }
+  | {
+      type: 'viewMonitor';
+      pipelineId: string;
+      workspaceId: string;
+      runId?: string;
+      itemType?: ItemType;
+    }
+  | {
+      type: 'viewHistory';
+      pipelineId: string;
+      workspaceId: string;
+      pipelineName: string;
+      workspaceName: string;
+      itemType?: ItemType;
+    }
   | { type: 'addTenant' }
   | { type: 'exportHistory'; pipelineId: string }
   | { type: 'fetchPipelineHistory'; pipelineId: string; workspaceId: string; itemType?: ItemType }
@@ -249,12 +314,22 @@ export type WebviewToExtMsg =
 export type ExtToDashMsg =
   | { type: 'updateState'; state: DashboardState }
   /** log: false keeps a pure UI confirmation (e.g. "copied") out of the notification history. */
-  | { type: 'toast'; message: string; level: 'info' | 'success' | 'error' | 'warning'; log?: boolean };
+  | {
+      type: 'toast';
+      message: string;
+      level: 'info' | 'success' | 'error' | 'warning';
+      log?: boolean;
+    };
 
 // Messages sent FROM extension TO history panel
 export type ExtToHistoryMsg =
   | { type: 'historyData'; data: HistoryData }
-  | { type: 'toast'; message: string; level: 'info' | 'success' | 'error' | 'warning'; log?: boolean };
+  | {
+      type: 'toast';
+      message: string;
+      level: 'info' | 'success' | 'error' | 'warning';
+      log?: boolean;
+    };
 
 // Messages sent FROM history webview TO extension
 export type HistoryToExtMsg =

@@ -37,8 +37,7 @@ interface MaintenanceOptions {
  *  plus: could not start (Error), no final status in time (Timeout), no job id
  *  to follow (Untracked), panel closed while following (Disposed). */
 type MaintenanceOutcome =
-  | 'Completed' | 'Failed' | 'Cancelled' | 'Deduped'
-  | 'Error' | 'Timeout' | 'Untracked' | 'Disposed';
+  'Completed' | 'Failed' | 'Cancelled' | 'Deduped' | 'Error' | 'Timeout' | 'Untracked' | 'Disposed';
 
 const TERMINAL_JOB_STATUSES = new Set(['Completed', 'Failed', 'Cancelled', 'Deduped']);
 
@@ -112,7 +111,12 @@ export class LakehousePanel {
     );
 
     LakehousePanel.currentPanel = new LakehousePanel(
-      panel, extensionUri, fabricApi, storage, context, notifications,
+      panel,
+      extensionUri,
+      fabricApi,
+      storage,
+      context,
+      notifications,
     );
     return LakehousePanel.currentPanel;
   }
@@ -157,17 +161,16 @@ export class LakehousePanel {
     this._postState();
 
     const cfg = vscode.workspace.getConfiguration('fabricPulse');
-    const blacklist = (cfg.get<string[]>('blacklistedWorkspaces', [])).map(s => s.toLowerCase());
+    const blacklist = cfg.get<string[]>('blacklistedWorkspaces', []).map((s) => s.toLowerCase());
     const isBlacklisted = (ws: { id: string; displayName: string }) =>
-      blacklist.includes(ws.id.toLowerCase()) ||
-      blacklist.includes(ws.displayName.toLowerCase());
+      blacklist.includes(ws.id.toLowerCase()) || blacklist.includes(ws.displayName.toLowerCase());
 
     try {
       // Fetch workspaces
       const rawWorkspaces = await this._fabricApi.getWorkspaces(this._currentTenantId);
       this._workspaces = rawWorkspaces
-        .filter(ws => !isBlacklisted(ws))
-        .map(ws => ({
+        .filter((ws) => !isBlacklisted(ws))
+        .map((ws) => ({
           ...ws,
           isFavorite: this._storage.isWorkspaceFavorite(ws.id),
         }));
@@ -175,13 +178,13 @@ export class LakehousePanel {
 
       // Fetch lakehouses
       const filteredWorkspaces = this._selectedWorkspaceId
-        ? this._workspaces.filter(w => w.id === this._selectedWorkspaceId)
+        ? this._workspaces.filter((w) => w.id === this._selectedWorkspaceId)
         : this._workspaces;
 
       const allLakehouses: Lakehouse[] = [];
 
       for (let i = 0; i < filteredWorkspaces.length; i++) {
-        if (i > 0) await new Promise(r => setTimeout(r, 500));
+        if (i > 0) await new Promise((r) => setTimeout(r, 500));
         const ws = filteredWorkspaces[i];
         try {
           const lhs = await this._fabricApi.getLakehouses(this._currentTenantId, ws.id);
@@ -191,7 +194,10 @@ export class LakehousePanel {
             allLakehouses.push(lh);
           }
         } catch (err) {
-          console.warn(`[FabricPulse] Error fetching lakehouses for workspace ${ws.displayName}:`, err);
+          console.warn(
+            `[FabricPulse] Error fetching lakehouses for workspace ${ws.displayName}:`,
+            err,
+          );
         }
       }
 
@@ -205,7 +211,7 @@ export class LakehousePanel {
 
       // If a lakehouse was expanded, re-fetch its tables
       if (this._expandedLakehouseId) {
-        const lh = this._lakehouses.find(l => l.id === this._expandedLakehouseId);
+        const lh = this._lakehouses.find((l) => l.id === this._expandedLakehouseId);
         if (lh) {
           try {
             const fetched = await this._fetchTables(lh);
@@ -261,15 +267,18 @@ export class LakehousePanel {
         if (!isUuid(msg.lakehouseId) || !isUuid(msg.workspaceId)) return fail('bad id');
         break;
       case 'openInFabric':
-        if (!isUuid(msg.lakehouseId) || !isUuid(msg.workspaceId) || !isUuid(msg.tenantId)) return fail('bad UUID');
+        if (!isUuid(msg.lakehouseId) || !isUuid(msg.workspaceId) || !isUuid(msg.tenantId))
+          return fail('bad UUID');
         break;
       case 'runMaintenance':
       case 'computeTableSize':
         if (!isUuid(msg.lakehouseId) || !isUuid(msg.workspaceId)) return fail('bad id');
-        if (typeof msg.tableName !== 'string' || msg.tableName.length > 256) return fail('bad tableName');
+        if (typeof msg.tableName !== 'string' || msg.tableName.length > 256)
+          return fail('bad tableName');
         break;
       case 'copyConnectionString':
-        if (typeof msg.connectionString !== 'string' || msg.connectionString.length > 1024) return fail('bad connectionString');
+        if (typeof msg.connectionString !== 'string' || msg.connectionString.length > 1024)
+          return fail('bad connectionString');
         break;
       case 'openOverview':
         if (!isUuid(msg.lakehouseId) || !isUuid(msg.workspaceId)) return fail('bad id');
@@ -279,7 +288,8 @@ export class LakehousePanel {
         if (!Array.isArray(msg.tables) || msg.tables.length > 1000) return fail('bad tables');
         for (const t of msg.tables) {
           if (typeof t.name !== 'string' || t.name.length > 256) return fail('bad table name');
-          if (t.schema !== undefined && (typeof t.schema !== 'string' || t.schema.length > 128)) return fail('bad schema');
+          if (t.schema !== undefined && (typeof t.schema !== 'string' || t.schema.length > 128))
+            return fail('bad schema');
         }
         break;
       case 'cancelOverviewBatch':
@@ -289,12 +299,15 @@ export class LakehousePanel {
         break;
       case 'runBulkMaintenance':
         if (!isUuid(msg.lakehouseId) || !isUuid(msg.workspaceId)) return fail('bad id');
-        if (!Array.isArray(msg.tables) || msg.tables.length === 0 || msg.tables.length > 1000) return fail('bad tables');
+        if (!Array.isArray(msg.tables) || msg.tables.length === 0 || msg.tables.length > 1000)
+          return fail('bad tables');
         for (const t of msg.tables) {
           if (typeof t.name !== 'string' || t.name.length > 256) return fail('bad table name');
-          if (t.schema !== undefined && (typeof t.schema !== 'string' || t.schema.length > 128)) return fail('bad schema');
+          if (t.schema !== undefined && (typeof t.schema !== 'string' || t.schema.length > 128))
+            return fail('bad schema');
         }
-        if (typeof msg.vOrder !== 'boolean' || typeof msg.vacuum !== 'boolean') return fail('bad maintenance options');
+        if (typeof msg.vOrder !== 'boolean' || typeof msg.vacuum !== 'boolean')
+          return fail('bad maintenance options');
         break;
     }
     return true;
@@ -304,7 +317,6 @@ export class LakehousePanel {
     if (!this._validateMsg(msg)) return;
 
     switch (msg.type) {
-
       case 'ready':
         await this.refresh();
         break;
@@ -335,9 +347,13 @@ export class LakehousePanel {
         if (isFav) {
           this._storage.removeLakehouseFavorite(msg.lakehouseId);
         } else {
-          this._storage.addLakehouseFavorite(this._currentTenantId, msg.workspaceId, msg.lakehouseId);
+          this._storage.addLakehouseFavorite(
+            this._currentTenantId,
+            msg.workspaceId,
+            msg.lakehouseId,
+          );
         }
-        const lh = this._lakehouses.find(l => l.id === msg.lakehouseId);
+        const lh = this._lakehouses.find((l) => l.id === msg.lakehouseId);
         if (lh) lh.isFavorite = !isFav;
         this._postState();
         break;
@@ -351,7 +367,7 @@ export class LakehousePanel {
           this._postState();
           break;
         }
-        const targetLh = this._lakehouses.find(l => l.id === msg.lakehouseId);
+        const targetLh = this._lakehouses.find((l) => l.id === msg.lakehouseId);
         if (!targetLh) break;
         this._expandedLakehouseId = msg.lakehouseId;
         this._isLoading = true;
@@ -368,7 +384,11 @@ export class LakehousePanel {
           targetLh.tableCount = this._tables.length;
         } catch (err: unknown) {
           if (this._expandedLakehouseId === msg.lakehouseId) this._tables = [];
-          this._post({ type: 'toast', message: err instanceof Error ? err.message : String(err), level: 'error' });
+          this._post({
+            type: 'toast',
+            message: err instanceof Error ? err.message : String(err),
+            level: 'error',
+          });
         } finally {
           this._isLoading = false;
           this._postState();
@@ -384,13 +404,20 @@ export class LakehousePanel {
 
       case 'copyConnectionString':
         await vscode.env.clipboard.writeText(msg.connectionString);
-        this._post({ type: 'toast', message: 'Connection string copied to clipboard', level: 'success', log: false });
+        this._post({
+          type: 'toast',
+          message: 'Connection string copied to clipboard',
+          level: 'success',
+          log: false,
+        });
         break;
 
       case 'runMaintenance':
         // Not awaited: the job is followed until it ends (toasts + live status).
         void this._maintainTable(
-          this._currentTenantId, msg.workspaceId, msg.lakehouseId,
+          this._currentTenantId,
+          msg.workspaceId,
+          msg.lakehouseId,
           { name: msg.tableName, schema: msg.schemaName },
           { vOrder: msg.vOrder, vacuum: msg.vacuum, vacuumRetention: msg.vacuumRetention },
           false,
@@ -400,20 +427,32 @@ export class LakehousePanel {
       case 'computeTableSize': {
         try {
           const size = await this._fabricApi.getTableSize(
-            this._currentTenantId, msg.workspaceId, msg.lakehouseId, msg.tableName, msg.schemaName,
+            this._currentTenantId,
+            msg.workspaceId,
+            msg.lakehouseId,
+            msg.tableName,
+            msg.schemaName,
           );
           const key = msg.schemaName ? `${msg.schemaName}.${msg.tableName}` : msg.tableName;
           this._tableSizes.set(`${msg.lakehouseId}:${key}`, size);
           this._storage.upsertTableSize(msg.lakehouseId, key, size);
           const t = this._tables.find(
-            tbl => (tbl.schema ? `${tbl.schema}.${tbl.name}` : tbl.name) === key,
+            (tbl) => (tbl.schema ? `${tbl.schema}.${tbl.name}` : tbl.name) === key,
           );
           if (t) t.sizeBytes = size;
           this._postState();
         } catch (err: unknown) {
-          this._post({ type: 'toast', message: err instanceof Error ? err.message : String(err), level: 'error' });
+          this._post({
+            type: 'toast',
+            message: err instanceof Error ? err.message : String(err),
+            level: 'error',
+          });
         } finally {
-          this._post({ type: 'sizeComputed', tableName: msg.tableName, schemaName: msg.schemaName });
+          this._post({
+            type: 'sizeComputed',
+            tableName: msg.tableName,
+            schemaName: msg.schemaName,
+          });
         }
         break;
       }
@@ -425,13 +464,13 @@ export class LakehousePanel {
       }
 
       case 'openOverview': {
-        const lh = this._lakehouses.find(l => l.id === msg.lakehouseId);
+        const lh = this._lakehouses.find((l) => l.id === msg.lakehouseId);
         if (!lh) break;
         try {
           // Reuse already-fetched tables if this lakehouse is expanded, else fetch
           let tables: LakehouseTable[];
           if (this._expandedLakehouseId === msg.lakehouseId && this._tables.length > 0) {
-            tables = this._tables.map(t => ({ ...t }));
+            tables = this._tables.map((t) => ({ ...t }));
           } else {
             tables = await this._fetchTables(lh);
           }
@@ -450,7 +489,11 @@ export class LakehousePanel {
           const bulkRun = this._bulkRuns.get(msg.lakehouseId);
           if (bulkRun) this._postBulkProgress(bulkRun);
         } catch (err: unknown) {
-          this._post({ type: 'toast', message: err instanceof Error ? err.message : String(err), level: 'error' });
+          this._post({
+            type: 'toast',
+            message: err instanceof Error ? err.message : String(err),
+            level: 'error',
+          });
         }
         break;
       }
@@ -461,25 +504,53 @@ export class LakehousePanel {
         for (let i = 0; i < msg.tables.length; i++) {
           if (this._disposed) return;
           if (this._overviewBatchCancelled) {
-            this._post({ type: 'overviewBatchProgress', tableKey: '', sizeBytes: 0, done: i, total, cancelled: true });
+            this._post({
+              type: 'overviewBatchProgress',
+              tableKey: '',
+              sizeBytes: 0,
+              done: i,
+              total,
+              cancelled: true,
+            });
             break;
           }
           const t = msg.tables[i];
           const key = t.schema ? `${t.schema}.${t.name}` : t.name;
           try {
             const size = await this._fabricApi.getTableSize(
-              this._currentTenantId, msg.workspaceId, msg.lakehouseId, t.name, t.schema,
+              this._currentTenantId,
+              msg.workspaceId,
+              msg.lakehouseId,
+              t.name,
+              t.schema,
             );
             this._tableSizes.set(`${msg.lakehouseId}:${key}`, size);
             this._storage.upsertTableSize(msg.lakehouseId, key, size);
             if (this._expandedLakehouseId === msg.lakehouseId) {
-              const tbl = this._tables.find(tb => (tb.schema ? `${tb.schema}.${tb.name}` : tb.name) === key);
-              if (tbl) { tbl.sizeBytes = size; this._postState(); }
+              const tbl = this._tables.find(
+                (tb) => (tb.schema ? `${tb.schema}.${tb.name}` : tb.name) === key,
+              );
+              if (tbl) {
+                tbl.sizeBytes = size;
+                this._postState();
+              }
             }
-            this._post({ type: 'overviewBatchProgress', tableKey: key, sizeBytes: size, done: i + 1, total });
+            this._post({
+              type: 'overviewBatchProgress',
+              tableKey: key,
+              sizeBytes: size,
+              done: i + 1,
+              total,
+            });
           } catch (err) {
             console.warn(`[FabricPulse] Failed to compute size for ${key}:`, err);
-            this._post({ type: 'overviewBatchProgress', tableKey: key, sizeBytes: -1, done: i + 1, total });
+            this._post({
+              type: 'overviewBatchProgress',
+              tableKey: key,
+              sizeBytes: -1,
+              done: i + 1,
+              total,
+            });
           }
         }
         break;
@@ -493,7 +564,8 @@ export class LakehousePanel {
         if (this._bulkRuns.has(msg.lakehouseId)) {
           this._post({
             type: 'toast',
-            message: 'Bulk maintenance is already running on this lakehouse — stop it or wait for it to finish.',
+            message:
+              'Bulk maintenance is already running on this lakehouse — stop it or wait for it to finish.',
             level: 'warning',
           });
           break;
@@ -536,8 +608,16 @@ export class LakehousePanel {
     let jobInstanceId: string | undefined;
     try {
       const result = await this._fabricApi.triggerTableMaintenance(
-        tenantId, workspaceId, lakehouseId, table.name,
-        { schemaName: table.schema, vOrder: options.vOrder, vacuum: options.vacuum, vacuumRetention: options.vacuumRetention },
+        tenantId,
+        workspaceId,
+        lakehouseId,
+        table.name,
+        {
+          schemaName: table.schema,
+          vOrder: options.vOrder,
+          vacuum: options.vacuum,
+          vacuumRetention: options.vacuumRetention,
+        },
       );
       jobInstanceId = result.jobInstanceId;
     } catch (err: unknown) {
@@ -552,13 +632,22 @@ export class LakehousePanel {
     }
 
     this._setMaintenanceStatus(lakehouseId, key, `${desc} — InProgress`);
-    if (!bulk) this._post({ type: 'toast', message: `${desc} triggered for "${key}"`, level: 'success' });
+    if (!bulk)
+      this._post({ type: 'toast', message: `${desc} triggered for "${key}"`, level: 'success' });
 
     // No job id to follow (the API answered 202 without one): the status stays
     // InProgress, as it always has in that case.
     if (!jobInstanceId) return 'Untracked';
 
-    return this._followMaintenanceJob(tenantId, workspaceId, lakehouseId, jobInstanceId, key, desc, bulk);
+    return this._followMaintenanceJob(
+      tenantId,
+      workspaceId,
+      lakehouseId,
+      jobInstanceId,
+      key,
+      desc,
+      bulk,
+    );
   }
 
   private async _followMaintenanceJob(
@@ -577,12 +666,17 @@ export class LakehousePanel {
     let lastStatus = 'InProgress';
 
     while (Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, intervalMs));
+      await new Promise((r) => setTimeout(r, intervalMs));
       if (this._disposed) return 'Disposed';
 
       let job: Awaited<ReturnType<FabricApiService['getJobInstance']>>;
       try {
-        job = await this._fabricApi.getJobInstance(tenantId, workspaceId, lakehouseId, jobInstanceId);
+        job = await this._fabricApi.getJobInstance(
+          tenantId,
+          workspaceId,
+          lakehouseId,
+          jobInstanceId,
+        );
       } catch (err) {
         console.warn(`[FabricPulse] Error polling maintenance job ${jobInstanceId}:`, err);
         continue; // transient errors shouldn't stop tracking
@@ -618,11 +712,20 @@ export class LakehousePanel {
    *  A pool rather than fixed batches: the next table starts as soon as any job
    *  ends. Same ceiling on the capacity as batches of that size, without every
    *  batch waiting on its slowest table. */
-  private async _runBulkMaintenance(msg: Extract<LakehouseToExtMsg, { type: 'runBulkMaintenance' }>): Promise<void> {
+  private async _runBulkMaintenance(
+    msg: Extract<LakehouseToExtMsg, { type: 'runBulkMaintenance' }>,
+  ): Promise<void> {
     const tenantId = this._currentTenantId;
-    const lakehouseName = this._lakehouses.find(l => l.id === msg.lakehouseId)?.displayName ?? msg.lakehouseId;
-    const options: MaintenanceOptions = { vOrder: msg.vOrder, vacuum: msg.vacuum, vacuumRetention: msg.vacuumRetention };
-    const configured = vscode.workspace.getConfiguration('fabricPulse').get<number>('maintenanceConcurrency', 15);
+    const lakehouseName =
+      this._lakehouses.find((l) => l.id === msg.lakehouseId)?.displayName ?? msg.lakehouseId;
+    const options: MaintenanceOptions = {
+      vOrder: msg.vOrder,
+      vacuum: msg.vacuum,
+      vacuumRetention: msg.vacuumRetention,
+    };
+    const configured = vscode.workspace
+      .getConfiguration('fabricPulse')
+      .get<number>('maintenanceConcurrency', 15);
     const concurrency = Math.max(1, Math.min(50, Math.floor(configured) || 15));
 
     const queue = [...msg.tables];
@@ -654,7 +757,14 @@ export class LakehousePanel {
 
         let outcome: MaintenanceOutcome;
         try {
-          outcome = await this._maintainTable(tenantId, msg.workspaceId, msg.lakehouseId, table, options, true);
+          outcome = await this._maintainTable(
+            tenantId,
+            msg.workspaceId,
+            msg.lakehouseId,
+            table,
+            options,
+            true,
+          );
         } catch (err) {
           console.warn('[FabricPulse] Unexpected bulk maintenance error:', err);
           outcome = 'Error';
@@ -662,10 +772,22 @@ export class LakehousePanel {
 
         run.running--;
         switch (outcome) {
-          case 'Completed': case 'Deduped':                 run.completed++; break;
-          case 'Failed': case 'Cancelled': case 'Error':     run.failed++; break;
-          case 'Timeout': case 'Untracked':                  run.unknown++; break;
-          case 'Disposed':                                   interrupted++; break;
+          case 'Completed':
+          case 'Deduped':
+            run.completed++;
+            break;
+          case 'Failed':
+          case 'Cancelled':
+          case 'Error':
+            run.failed++;
+            break;
+          case 'Timeout':
+          case 'Untracked':
+            run.unknown++;
+            break;
+          case 'Disposed':
+            interrupted++;
+            break;
         }
         this._postBulkProgress(run);
       }
@@ -679,11 +801,16 @@ export class LakehousePanel {
       this._postBulkProgress(run);
 
       const parts = [`${run.completed} completed`];
-      if (run.failed)  parts.push(`${run.failed} failed`);
+      if (run.failed) parts.push(`${run.failed} failed`);
       if (run.unknown) parts.push(`${run.unknown} with no final status`);
-      if (run.queued)  parts.push(`${run.queued} not started`);
-      const verb = this._disposed ? 'interrupted (Lakehouses panel closed)' : run.stopping ? 'stopped' : 'finished';
-      const tail = interrupted > 0 ? ` — ${interrupted} job(s) already started keep running in Fabric` : '';
+      if (run.queued) parts.push(`${run.queued} not started`);
+      const verb = this._disposed
+        ? 'interrupted (Lakehouses panel closed)'
+        : run.stopping
+          ? 'stopped'
+          : 'finished';
+      const tail =
+        interrupted > 0 ? ` — ${interrupted} job(s) already started keep running in Fabric` : '';
       // _post records the toast before checking for disposal, so this summary
       // reaches the notification history even when the panel is already gone.
       this._post({
@@ -699,7 +826,12 @@ export class LakehousePanel {
   }
 
   /** Persists a table's maintenance status and pushes it to whichever view shows it. */
-  private _setMaintenanceStatus(lakehouseId: string, key: string, status: string, failureReason?: string): void {
+  private _setMaintenanceStatus(
+    lakehouseId: string,
+    key: string,
+    status: string,
+    failureReason?: string,
+  ): void {
     this._storage.upsertMaintenance(lakehouseId, key, status);
     this._post({
       type: 'maintenanceStatus',
@@ -789,9 +921,7 @@ export class LakehousePanel {
 
     // Read JS inline so VS Code's webview resource-server cache is bypassed entirely.
     // webview.html is always a fresh string assignment — never cached.
-    const jsContent = fs.readFileSync(
-      path.join(webviewDir.fsPath, 'lakehouse.js'), 'utf-8',
-    );
+    const jsContent = fs.readFileSync(path.join(webviewDir.fsPath, 'lakehouse.js'), 'utf-8');
 
     const cssUri = this._panel.webview.asWebviewUri(
       vscode.Uri.joinPath(webviewDir, 'dashboard.css'),
@@ -818,7 +948,7 @@ export class LakehousePanel {
     this._disposed = true;
     LakehousePanel.currentPanel = undefined;
     this._panel.dispose();
-    this._disposables.forEach(d => d.dispose());
+    this._disposables.forEach((d) => d.dispose());
     this._disposables.length = 0;
   }
 }

@@ -2,10 +2,10 @@ import * as vscode from 'vscode';
 import { NotificationEntry, NotificationLevel, NotificationLog } from '../services/notificationLog';
 
 const ICONS: Record<NotificationLevel, vscode.ThemeIcon> = {
-  error:   new vscode.ThemeIcon('error',   new vscode.ThemeColor('charts.red')),
+  error: new vscode.ThemeIcon('error', new vscode.ThemeColor('charts.red')),
   warning: new vscode.ThemeIcon('warning', new vscode.ThemeColor('charts.yellow')),
-  success: new vscode.ThemeIcon('pass',    new vscode.ThemeColor('charts.green')),
-  info:    new vscode.ThemeIcon('info',    new vscode.ThemeColor('charts.blue')),
+  success: new vscode.ThemeIcon('pass', new vscode.ThemeColor('charts.green')),
+  info: new vscode.ThemeIcon('info', new vscode.ThemeColor('charts.blue')),
 };
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -22,7 +22,9 @@ function formatAt(iso: string): string {
 
 /** Sidebar list of everything recorded in the NotificationLog, newest first,
  *  with an unread badge on the view (and so on the FabricPulse activity icon). */
-export class NotificationsView implements vscode.TreeDataProvider<NotificationEntry>, vscode.Disposable {
+export class NotificationsView
+  implements vscode.TreeDataProvider<NotificationEntry>, vscode.Disposable
+{
   static readonly VIEW_ID = 'fabricpulse.notificationsView';
 
   private readonly _onDidChangeTreeData = new vscode.EventEmitter<void>();
@@ -32,7 +34,9 @@ export class NotificationsView implements vscode.TreeDataProvider<NotificationEn
   private readonly _disposables: vscode.Disposable[] = [];
 
   constructor(private readonly _log: NotificationLog) {
-    this._view = vscode.window.createTreeView(NotificationsView.VIEW_ID, { treeDataProvider: this });
+    this._view = vscode.window.createTreeView(NotificationsView.VIEW_ID, {
+      treeDataProvider: this,
+    });
     this._disposables.push(
       this._view,
       this._onDidChangeTreeData,
@@ -41,7 +45,9 @@ export class NotificationsView implements vscode.TreeDataProvider<NotificationEn
         this._syncBadge();
       }),
       // Opening the view is what "reading" them means.
-      this._view.onDidChangeVisibility(e => { if (e.visible) _log.markAllRead(); }),
+      this._view.onDidChangeVisibility((e) => {
+        if (e.visible) _log.markAllRead();
+      }),
     );
     this._syncBadge();
   }
@@ -58,9 +64,10 @@ export class NotificationsView implements vscode.TreeDataProvider<NotificationEn
       return;
     }
     const n = this._log.unreadCount;
-    this._view.badge = n > 0
-      ? { value: n, tooltip: `${n} unread FabricPulse notification${n > 1 ? 's' : ''}` }
-      : undefined;
+    this._view.badge =
+      n > 0
+        ? { value: n, tooltip: `${n} unread FabricPulse notification${n > 1 ? 's' : ''}` }
+        : undefined;
   }
 
   getChildren(element?: NotificationEntry): NotificationEntry[] {
@@ -75,14 +82,16 @@ export class NotificationsView implements vscode.TreeDataProvider<NotificationEn
     item.iconPath = ICONS[e.level] ?? ICONS.info;
     item.contextValue = 'fabricPulseNotification';
     const tooltip = new vscode.MarkdownString();
-    tooltip.appendMarkdown(`**${e.level.toUpperCase()}** · ${e.source} · ${new Date(e.at).toLocaleString()}\n\n`);
+    tooltip.appendMarkdown(
+      `**${e.level.toUpperCase()}** · ${e.source} · ${new Date(e.at).toLocaleString()}\n\n`,
+    );
     tooltip.appendText(e.message); // appendText escapes: table names and API errors aren't markdown
     item.tooltip = tooltip;
     return item;
   }
 
   dispose(): void {
-    this._disposables.forEach(d => d.dispose());
+    this._disposables.forEach((d) => d.dispose());
     this._disposables.length = 0;
   }
 }

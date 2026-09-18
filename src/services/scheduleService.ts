@@ -13,34 +13,44 @@
 export interface ScheduleDef {
   enabled: boolean;
   type: 'Cron' | 'Daily' | 'Weekly' | 'Monthly';
-  interval?: number;        // Cron: minutes between runs
-  times?: string[];         // Daily/Weekly/Monthly: "HH:mm" wall-clock times
-  weekdays?: string[];      // Weekly: English day names ("Monday" …)
-  startDateTime?: string;   // wall-clock anchor in localTimeZoneId (no tz suffix)
-  endDateTime?: string;     // wall-clock end in localTimeZoneId
+  interval?: number; // Cron: minutes between runs
+  times?: string[]; // Daily/Weekly/Monthly: "HH:mm" wall-clock times
+  weekdays?: string[]; // Weekly: English day names ("Monday" …)
+  startDateTime?: string; // wall-clock anchor in localTimeZoneId (no tz suffix)
+  endDateTime?: string; // wall-clock end in localTimeZoneId
   localTimeZoneId?: string; // Windows time-zone id
   // Monthly only —
-  recurrence?: number;      // every N months (1–12); anchored on startDateTime's month
-  dayOfMonth?: number;      // DayOfMonth occurrence: 1–31
-  weekIndex?: string;       // OrdinalWeekday occurrence: First|Second|Third|Fourth|Fifth
-  ordinalWeekday?: string;  // OrdinalWeekday occurrence: English day name ("Monday" …)
+  recurrence?: number; // every N months (1–12); anchored on startDateTime's month
+  dayOfMonth?: number; // DayOfMonth occurrence: 1–31
+  weekIndex?: string; // OrdinalWeekday occurrence: First|Second|Third|Fourth|Fifth
+  ordinalWeekday?: string; // OrdinalWeekday occurrence: English day name ("Monday" …)
 }
 
 /** Result consumed by the dashboard. */
 export interface ScheduleInfo {
   enabled: boolean;
-  nextRunAt?: string;  // ISO-8601 UTC instant of the next run, if computable
-  summary: string;     // human-readable description (tooltip)
+  nextRunAt?: string; // ISO-8601 UTC instant of the next run, if computable
+  summary: string; // human-readable description (tooltip)
 }
 
 const WEEKDAY_INDEX: Record<string, number> = {
-  sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
+  sunday: 0,
+  monday: 1,
+  tuesday: 2,
+  wednesday: 3,
+  thursday: 4,
+  friday: 5,
+  saturday: 6,
 };
 
 const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const WEEK_INDEX: Record<string, number> = {
-  first: 1, second: 2, third: 3, fourth: 4, fifth: 5,
+  first: 1,
+  second: 2,
+  third: 3,
+  fourth: 4,
+  fifth: 5,
 };
 
 /** Number of days in a given (1-based) month. */
@@ -76,7 +86,7 @@ function resolveMonthlyDay(def: ScheduleDef, year: number, month1: number): numb
  *  fall back to UTC (with a console warning) so the next-run estimate stays
  *  reasonable rather than failing outright. */
 const WINDOWS_TO_IANA: Record<string, string> = {
-  'UTC': 'UTC',
+  UTC: 'UTC',
   'GMT Standard Time': 'Europe/London',
   'Greenwich Standard Time': 'Atlantic/Reykjavik',
   'W. Europe Standard Time': 'Europe/Berlin',
@@ -144,19 +154,33 @@ function resolveTz(windowsId?: string): string {
   if (windowsId.includes('/')) return windowsId;
   if (!_warnedZones.has(windowsId)) {
     _warnedZones.add(windowsId);
-    console.warn(`[FabricPulse] Unknown time-zone id "${windowsId}" — assuming UTC for next-run estimate.`);
+    console.warn(
+      `[FabricPulse] Unknown time-zone id "${windowsId}" — assuming UTC for next-run estimate.`,
+    );
   }
   return 'UTC';
 }
 
-interface WallClock { year: number; month: number; day: number; hour: number; minute: number; second: number; }
+interface WallClock {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+}
 
 /** Reads the wall-clock components of a UTC instant as observed in `tz`. */
 function tzParts(utcMs: number, tz: string): WallClock {
   const fmt = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz, hour12: false,
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    timeZone: tz,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
   });
   const map: Record<string, string> = {};
   for (const p of fmt.formatToParts(new Date(utcMs))) {
@@ -174,7 +198,14 @@ function tzParts(utcMs: number, tz: string): WallClock {
 
 /** Converts a wall-clock time in `tz` to the corresponding UTC epoch ms.
  *  Uses the standard offset-probe trick; good enough across DST boundaries. */
-function zonedWallClockToUtc(y: number, mo: number, d: number, h: number, mi: number, tz: string): number {
+function zonedWallClockToUtc(
+  y: number,
+  mo: number,
+  d: number,
+  h: number,
+  mi: number,
+  tz: string,
+): number {
   const guess = Date.UTC(y, mo - 1, d, h, mi);
   const p = tzParts(guess, tz);
   const asUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
@@ -189,8 +220,12 @@ function parseWallClock(s: string): WallClock | undefined {
   const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/.exec(s);
   if (!m) return undefined;
   return {
-    year: +m[1], month: +m[2], day: +m[3],
-    hour: +m[4], minute: +m[5], second: m[6] ? +m[6] : 0,
+    year: +m[1],
+    month: +m[2],
+    day: +m[3],
+    hour: +m[4],
+    minute: +m[5],
+    second: m[6] ? +m[6] : 0,
   };
 }
 
@@ -201,8 +236,19 @@ export function computeNextRun(def: ScheduleDef, nowMs: number = Date.now()): nu
 
   const startWc = def.startDateTime ? parseWallClock(def.startDateTime) : undefined;
   const endWc = def.endDateTime ? parseWallClock(def.endDateTime) : undefined;
-  const startMs = startWc ? zonedWallClockToUtc(startWc.year, startWc.month, startWc.day, startWc.hour, startWc.minute, tz) : undefined;
-  const endMs = endWc ? zonedWallClockToUtc(endWc.year, endWc.month, endWc.day, endWc.hour, endWc.minute, tz) : undefined;
+  const startMs = startWc
+    ? zonedWallClockToUtc(
+        startWc.year,
+        startWc.month,
+        startWc.day,
+        startWc.hour,
+        startWc.minute,
+        tz,
+      )
+    : undefined;
+  const endMs = endWc
+    ? zonedWallClockToUtc(endWc.year, endWc.month, endWc.day, endWc.hour, endWc.minute, tz)
+    : undefined;
 
   if (endMs != null && nowMs > endMs) return undefined;
   const lower = Math.max(nowMs, startMs ?? nowMs);
@@ -218,8 +264,11 @@ export function computeNextRun(def: ScheduleDef, nowMs: number = Date.now()): nu
 
   // All time-slot schedules (Daily / Weekly / Monthly) share this parsed list.
   const times = (def.times ?? [])
-    .map(t => { const [h, mi] = t.split(':'); return { h: Number(h), mi: Number(mi) }; })
-    .filter(t => Number.isFinite(t.h) && Number.isFinite(t.mi))
+    .map((t) => {
+      const [h, mi] = t.split(':');
+      return { h: Number(h), mi: Number(mi) };
+    })
+    .filter((t) => Number.isFinite(t.h) && Number.isFinite(t.mi))
     .sort((a, b) => a.h - b.h || a.mi - b.mi);
   if (times.length === 0) return undefined;
 
@@ -248,9 +297,12 @@ export function computeNextRun(def: ScheduleDef, nowMs: number = Date.now()): nu
     return undefined;
   }
 
-  const weekdaySet = def.type === 'Weekly'
-    ? new Set((def.weekdays ?? []).map(d => WEEKDAY_INDEX[d.toLowerCase()]).filter(n => n != null))
-    : null;
+  const weekdaySet =
+    def.type === 'Weekly'
+      ? new Set(
+          (def.weekdays ?? []).map((d) => WEEKDAY_INDEX[d.toLowerCase()]).filter((n) => n != null),
+        )
+      : null;
   if (weekdaySet && weekdaySet.size === 0) return undefined;
 
   const nowWc = tzParts(nowMs, tz);
@@ -258,7 +310,9 @@ export function computeNextRun(def: ScheduleDef, nowMs: number = Date.now()): nu
 
   for (let off = 0; off <= 8; off++) {
     const cal = new Date(anchor + off * 86_400_000);
-    const y = cal.getUTCFullYear(), mo = cal.getUTCMonth() + 1, d = cal.getUTCDate();
+    const y = cal.getUTCFullYear(),
+      mo = cal.getUTCMonth() + 1,
+      d = cal.getUTCDate();
     if (weekdaySet && !weekdaySet.has(cal.getUTCDay())) continue;
     for (const t of times) {
       const cand = zonedWallClockToUtc(y, mo, d, t.h, t.mi, tz);
@@ -272,13 +326,14 @@ export function computeNextRun(def: ScheduleDef, nowMs: number = Date.now()): nu
 export function summarize(def: ScheduleDef): string {
   const tzSuffix = def.localTimeZoneId ? ` (${def.localTimeZoneId})` : '';
   if (def.type === 'Cron' && def.interval) {
-    const label = def.interval % 60 === 0 ? `every ${def.interval / 60}h` : `every ${def.interval}m`;
+    const label =
+      def.interval % 60 === 0 ? `every ${def.interval / 60}h` : `every ${def.interval}m`;
     return `Cron — ${label}${tzSuffix}`;
   }
   const times = (def.times ?? []).join(', ');
   if (def.type === 'Weekly') {
     const days = (def.weekdays ?? [])
-      .map(d => WEEKDAY_SHORT[WEEKDAY_INDEX[d.toLowerCase()] ?? -1] ?? d)
+      .map((d) => WEEKDAY_SHORT[WEEKDAY_INDEX[d.toLowerCase()] ?? -1] ?? d)
       .join(', ');
     return `Weekly — ${days || '?'} at ${times || '?'}${tzSuffix}`;
   }
@@ -286,7 +341,8 @@ export function summarize(def: ScheduleDef): string {
     const rec = def.recurrence && def.recurrence > 1 ? `every ${def.recurrence} months` : 'Monthly';
     let when: string;
     if (def.weekIndex && def.ordinalWeekday) {
-      const wd = WEEKDAY_SHORT[WEEKDAY_INDEX[def.ordinalWeekday.toLowerCase()] ?? -1] ?? def.ordinalWeekday;
+      const wd =
+        WEEKDAY_SHORT[WEEKDAY_INDEX[def.ordinalWeekday.toLowerCase()] ?? -1] ?? def.ordinalWeekday;
       when = `${def.weekIndex} ${wd}`;
     } else if (def.dayOfMonth != null) {
       when = `day ${def.dayOfMonth}`;
@@ -300,10 +356,13 @@ export function summarize(def: ScheduleDef): string {
 
 /** Combines one or more schedule definitions into a single ScheduleInfo,
  *  picking the soonest next run across all enabled schedules. */
-export function combineSchedules(defs: ScheduleDef[], nowMs: number = Date.now()): ScheduleInfo | undefined {
+export function combineSchedules(
+  defs: ScheduleDef[],
+  nowMs: number = Date.now(),
+): ScheduleInfo | undefined {
   if (defs.length === 0) return undefined;
 
-  const enabled = defs.filter(d => d.enabled);
+  const enabled = defs.filter((d) => d.enabled);
   if (enabled.length === 0) {
     return { enabled: false, summary: summarize(defs[0]) };
   }

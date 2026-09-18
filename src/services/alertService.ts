@@ -67,7 +67,11 @@ export class AlertService {
     if (status !== 'Failed') return;
     if (this._wasAlerted(runId)) return;
 
-    this.notifications.add('error', 'Alerts', `"${pipeline.displayName}" failed in workspace "${pipeline.workspaceName}"`);
+    this.notifications.add(
+      'error',
+      'Alerts',
+      `"${pipeline.displayName}" failed in workspace "${pipeline.workspaceName}"`,
+    );
     const action = await vscode.window.showErrorMessage(
       `⚡ FabricPulse: "${pipeline.displayName}" failed in workspace "${pipeline.workspaceName}"`,
       'Open Dashboard',
@@ -96,7 +100,11 @@ export class AlertService {
     const actual = formatDuration(durationMs);
     const threshold = formatDuration(pipeline.durationThresholdMs);
 
-    this.notifications.add('warning', 'Alerts', `"${pipeline.displayName}" took ${actual} (threshold: ${threshold})`);
+    this.notifications.add(
+      'warning',
+      'Alerts',
+      `"${pipeline.displayName}" took ${actual} (threshold: ${threshold})`,
+    );
     await vscode.window.showWarningMessage(
       `⚡ FabricPulse: "${pipeline.displayName}" took ${actual} (threshold: ${threshold})`,
       'Open Dashboard',
@@ -115,7 +123,9 @@ export class AlertService {
     // Uses >= comparison to avoid missing the target minute due to timer drift.
     this.dailyReportTimer = setInterval(() => {
       const now = new Date();
-      const cfg = vscode.workspace.getConfiguration('fabricPulse').get<string>('dailyReportTime', '18:00');
+      const cfg = vscode.workspace
+        .getConfiguration('fabricPulse')
+        .get<string>('dailyReportTime', '18:00');
       const [targetHour, targetMin] = cfg.split(':').map(Number);
 
       if (isNaN(targetHour) || isNaN(targetMin)) return; // guard against malformed config
@@ -124,10 +134,7 @@ export class AlertService {
       const nowMinutes = now.getHours() * 60 + now.getMinutes();
       const targetMinutes = targetHour * 60 + targetMin;
 
-      if (
-        nowMinutes >= targetMinutes &&
-        this.lastDailyReportDate !== today
-      ) {
+      if (nowMinutes >= targetMinutes && this.lastDailyReportDate !== today) {
         this.lastDailyReportDate = today;
         this.context.globalState.update(DAILY_REPORT_DATE_KEY, today);
         this.sendDailyReport(tenantId);
@@ -145,10 +152,14 @@ export class AlertService {
     }
 
     const summary = `${stats.total} run${stats.total > 1 ? 's' : ''} today — ${stats.failed} failed`;
-    this.notifications.add(stats.failed > 0 ? 'warning' : 'info', 'Alerts', `Daily report: ${summary}`);
+    this.notifications.add(
+      stats.failed > 0 ? 'warning' : 'info',
+      'Alerts',
+      `Daily report: ${summary}`,
+    );
     const msg = `📊 FabricPulse: ${summary}`;
 
-    vscode.window.showInformationMessage(msg, 'Open Dashboard').then(action => {
+    vscode.window.showInformationMessage(msg, 'Open Dashboard').then((action) => {
       if (action === 'Open Dashboard') {
         vscode.commands.executeCommand('fabricPulse.openDashboard');
       }

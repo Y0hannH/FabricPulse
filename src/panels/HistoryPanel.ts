@@ -111,10 +111,14 @@ export class HistoryPanel {
 
   private _getDays(): number {
     switch (this._period) {
-      case '7d':  return 7;
-      case '30d': return 30;
-      case '90d': return 90;
-      case 'all': return 0;
+      case '7d':
+        return 7;
+      case '30d':
+        return 30;
+      case '90d':
+        return 90;
+      case 'all':
+        return 0;
     }
   }
 
@@ -126,7 +130,6 @@ export class HistoryPanel {
 
   private async _handleMessage(msg: HistoryToExtMsg): Promise<void> {
     switch (msg.type) {
-
       case 'ready':
         this._sendData();
         break;
@@ -145,7 +148,11 @@ export class HistoryPanel {
           console.warn(`[FabricPulse] Invalid annotation date: ${msg.date}`);
           break;
         }
-        if (typeof msg.note !== 'string' || msg.note.length === 0 || msg.note.length > HistoryPanel.MAX_NOTE_LENGTH) {
+        if (
+          typeof msg.note !== 'string' ||
+          msg.note.length === 0 ||
+          msg.note.length > HistoryPanel.MAX_NOTE_LENGTH
+        ) {
           console.warn('[FabricPulse] Invalid annotation note');
           break;
         }
@@ -206,9 +213,7 @@ export class HistoryPanel {
     const cssUri = this._panel.webview.asWebviewUri(
       vscode.Uri.joinPath(webviewDir, 'dashboard.css'),
     );
-    const jsUri = this._panel.webview.asWebviewUri(
-      vscode.Uri.joinPath(webviewDir, 'history.js'),
-    );
+    const jsUri = this._panel.webview.asWebviewUri(vscode.Uri.joinPath(webviewDir, 'history.js'));
     const nonce = getNonce();
 
     const v = Date.now();
@@ -224,7 +229,7 @@ export class HistoryPanel {
   public dispose(): void {
     HistoryPanel._panels.delete(this._pipeline.id);
     this._panel.dispose();
-    this._disposables.forEach(d => d.dispose());
+    this._disposables.forEach((d) => d.dispose());
     this._disposables.length = 0;
   }
 }

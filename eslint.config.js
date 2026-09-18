@@ -5,7 +5,7 @@
 // stopped being read and `npm run lint` failed outright ("couldn't find
 // eslint.config.js") from the ESLint 10 upgrade onwards. Rule set below is a
 // faithful port of that file; nothing was tightened or relaxed in the move.
-const js       = require('@eslint/js');
+const js = require('@eslint/js');
 const tsPlugin = require('@typescript-eslint/eslint-plugin');
 const tsParser = require('@typescript-eslint/parser');
 

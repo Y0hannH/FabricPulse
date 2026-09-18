@@ -40,7 +40,9 @@ export class StorageService {
     this.dbPath = path.join(storagePath, 'fabricpulse.db');
 
     // sql.js uses WebAssembly — no native compilation needed.
-    const initSqlJs = require('sql.js') as (cfg?: { locateFile(f: string): string }) => Promise<{ Database: new (data?: ArrayLike<number> | Buffer | null) => SqlDatabase }>;
+    const initSqlJs = require('sql.js') as (cfg?: {
+      locateFile(f: string): string;
+    }) => Promise<{ Database: new (data?: ArrayLike<number> | Buffer | null) => SqlDatabase }>;
 
     try {
       // The WASM binary is copied to the same directory as the bundled extension
@@ -70,9 +72,17 @@ export class StorageService {
       } catch {
         // Database file is corrupted — back it up and start fresh.
         const backupPath = this.dbPath + '.corrupted';
-        try { fs.renameSync(this.dbPath, backupPath); } catch { /* best-effort */ }
+        try {
+          fs.renameSync(this.dbPath, backupPath);
+        } catch {
+          /* best-effort */
+        }
         this.db = new this._SQL.Database();
-        this.notifications?.add('warning', 'Storage', 'Local database was corrupted and has been reset. History data was lost.');
+        this.notifications?.add(
+          'warning',
+          'Storage',
+          'Local database was corrupted and has been reset. History data was lost.',
+        );
         vscode.window.showWarningMessage(
           'FabricPulse: Local database was corrupted and has been reset. History data was lost.',
         );
@@ -91,7 +101,9 @@ export class StorageService {
     try {
       this._flushSync();
       this.db.close();
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
     this._openDb();
     console.log('[FabricPulse] DB reopened — WASM heap reset.');
   }
@@ -267,14 +279,16 @@ export class StorageService {
             WHERE r.pipeline_id = favorites.pipeline_id
               AND r.pipeline_name <> favorites.pipeline_id
             ORDER BY r.start_time DESC LIMIT 1)
-         WHERE display_name IS NULL`);
+         WHERE display_name IS NULL`,
+      );
       this.db.run(
         `UPDATE favorites SET workspace_name = (
            SELECT r.workspace_name FROM pipeline_runs r
             WHERE r.workspace_id = favorites.workspace_id
               AND r.workspace_name <> favorites.workspace_id
             ORDER BY r.start_time DESC LIMIT 1)
-         WHERE workspace_name IS NULL`);
+         WHERE workspace_name IS NULL`,
+      );
       this.db.run('UPDATE schema_version SET version = 5');
       this._flush();
     }
@@ -288,9 +302,20 @@ export class StorageService {
          (tenant_id, workspace_id, pipeline_id, pipeline_name, workspace_name,
           run_id, status, start_time, end_time, duration_ms, error_message, item_type)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [run.tenantId, run.workspaceId, run.pipelineId, run.pipelineName, run.workspaceName,
-       run.runId, run.status, run.startTime ?? null, run.endTime ?? null,
-       run.durationMs ?? null, run.errorMessage ?? null, run.itemType ?? 'pipeline'],
+      [
+        run.tenantId,
+        run.workspaceId,
+        run.pipelineId,
+        run.pipelineName,
+        run.workspaceName,
+        run.runId,
+        run.status,
+        run.startTime ?? null,
+        run.endTime ?? null,
+        run.durationMs ?? null,
+        run.errorMessage ?? null,
+        run.itemType ?? 'pipeline',
+      ],
     );
     this._flush();
   }
@@ -306,14 +331,29 @@ export class StorageService {
              (tenant_id, workspace_id, pipeline_id, pipeline_name, workspace_name,
               run_id, status, start_time, end_time, duration_ms, error_message, item_type)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-          [run.tenantId, run.workspaceId, run.pipelineId, run.pipelineName, run.workspaceName,
-           run.runId, run.status, run.startTime ?? null, run.endTime ?? null,
-           run.durationMs ?? null, run.errorMessage ?? null, run.itemType ?? 'pipeline'],
+          [
+            run.tenantId,
+            run.workspaceId,
+            run.pipelineId,
+            run.pipelineName,
+            run.workspaceName,
+            run.runId,
+            run.status,
+            run.startTime ?? null,
+            run.endTime ?? null,
+            run.durationMs ?? null,
+            run.errorMessage ?? null,
+            run.itemType ?? 'pipeline',
+          ],
         );
       }
       this.db.run('COMMIT');
     } catch (err) {
-      try { this.db.run('ROLLBACK'); } catch { /* already rolled back */ }
+      try {
+        this.db.run('ROLLBACK');
+      } catch {
+        /* already rolled back */
+      }
       throw err;
     } finally {
       this._inTransaction = false;
@@ -328,7 +368,7 @@ export class StorageService {
       ? 'SELECT * FROM pipeline_runs WHERE pipeline_id = ? AND start_time >= ? ORDER BY start_time DESC'
       : 'SELECT * FROM pipeline_runs WHERE pipeline_id = ? ORDER BY start_time DESC';
     const result = this.db.exec(sql, since ? [pipelineId, since] : [pipelineId]);
-    return this._rows(result).map(r => this._mapRun(r));
+    return this._rows(result).map((r) => this._mapRun(r));
   }
 
   getLastRun(pipelineId: string): StoredRun | undefined {
@@ -341,7 +381,11 @@ export class StorageService {
     return rows.length ? this._mapRun(rows[0]) : undefined;
   }
 
-  getDurationStats(pipelineId: string): { avg: number | undefined; max: number | undefined; min: number | undefined } {
+  getDurationStats(pipelineId: string): {
+    avg: number | undefined;
+    max: number | undefined;
+    min: number | undefined;
+  } {
     this._trackOp();
     const result = this.db.exec(
       `SELECT
@@ -362,10 +406,9 @@ export class StorageService {
 
   getRunCount(pipelineId: string): number {
     this._trackOp();
-    const result = this.db.exec(
-      'SELECT COUNT(*) FROM pipeline_runs WHERE pipeline_id = ?',
-      [pipelineId],
-    );
+    const result = this.db.exec('SELECT COUNT(*) FROM pipeline_runs WHERE pipeline_id = ?', [
+      pipelineId,
+    ]);
     return (result[0]?.values[0]?.[0] as number) ?? 0;
   }
 
@@ -410,8 +453,8 @@ export class StorageService {
          FROM pipeline_runs WHERE tenant_id = ? GROUP BY workspace_id`,
       [tenantId],
     );
-    return this._rows(result).map(r => ({
-      id:          r['workspace_id'] as string,
+    return this._rows(result).map((r) => ({
+      id: r['workspace_id'] as string,
       displayName: r['workspace_name'] as string,
       tenantId,
     }));
@@ -419,7 +462,14 @@ export class StorageService {
 
   /** Returns the distinct set of items (pipelines + semantic models) seen in pipeline_runs for a given tenant.
    *  Used to rebuild the dashboard view from cache without calling the Fabric API. */
-  getKnownPipelines(tenantId: string): { id: string; displayName: string; workspaceId: string; workspaceName: string; tenantId: string; itemType: string }[] {
+  getKnownPipelines(tenantId: string): {
+    id: string;
+    displayName: string;
+    workspaceId: string;
+    workspaceName: string;
+    tenantId: string;
+    itemType: string;
+  }[] {
     const result = this.db.exec(
       // GROUP BY rather than DISTINCT, for the same reason as getKnownWorkspaces:
       // an item recorded under two names was listed twice. Taking the MAX() row
@@ -430,13 +480,13 @@ export class StorageService {
        FROM pipeline_runs WHERE tenant_id = ? GROUP BY pipeline_id`,
       [tenantId],
     );
-    return this._rows(result).map(r => ({
-      id:            r['pipeline_id'] as string,
-      displayName:   r['pipeline_name'] as string,
-      workspaceId:   r['workspace_id'] as string,
+    return this._rows(result).map((r) => ({
+      id: r['pipeline_id'] as string,
+      displayName: r['pipeline_name'] as string,
+      workspaceId: r['workspace_id'] as string,
       workspaceName: r['workspace_name'] as string,
       tenantId,
-      itemType:      (r['item_type'] as string) ?? 'pipeline',
+      itemType: (r['item_type'] as string) ?? 'pipeline',
     }));
   }
 
@@ -444,7 +494,7 @@ export class StorageService {
 
   getFavorites(): Favorite[] {
     const result = this.db.exec('SELECT * FROM favorites');
-    return this._rows(result).map(r => this._mapFav(r));
+    return this._rows(result).map((r) => this._mapFav(r));
   }
 
   getFavorite(pipelineId: string): Favorite | undefined {
@@ -463,8 +513,16 @@ export class StorageService {
       `INSERT OR IGNORE INTO favorites
          (tenant_id, workspace_id, pipeline_id, alert_enabled, duration_threshold_ms, item_type, display_name, workspace_name)
        VALUES (?,?,?,?,?,?,?,?)`,
-      [fav.tenantId, fav.workspaceId, fav.pipelineId, fav.alertEnabled ? 1 : 0, fav.durationThresholdMs ?? null, fav.itemType ?? 'pipeline',
-       fav.displayName ?? null, fav.workspaceName ?? null],
+      [
+        fav.tenantId,
+        fav.workspaceId,
+        fav.pipelineId,
+        fav.alertEnabled ? 1 : 0,
+        fav.durationThresholdMs ?? null,
+        fav.itemType ?? 'pipeline',
+        fav.displayName ?? null,
+        fav.workspaceName ?? null,
+      ],
     );
     this._flush();
   }
@@ -474,7 +532,11 @@ export class StorageService {
     this._flush();
   }
 
-  updateFavoriteAlert(pipelineId: string, alertEnabled: boolean, durationThresholdMs?: number): void {
+  updateFavoriteAlert(
+    pipelineId: string,
+    alertEnabled: boolean,
+    durationThresholdMs?: number,
+  ): void {
     this.db.run(
       'UPDATE favorites SET alert_enabled = ?, duration_threshold_ms = ? WHERE pipeline_id = ?',
       [alertEnabled ? 1 : 0, durationThresholdMs ?? null, pipelineId],
@@ -485,12 +547,16 @@ export class StorageService {
   // ─── workspace_favorites ──────────────────────────────────────────────────
 
   isWorkspaceFavorite(workspaceId: string): boolean {
-    const result = this.db.exec('SELECT id FROM workspace_favorites WHERE workspace_id = ?', [workspaceId]);
+    const result = this.db.exec('SELECT id FROM workspace_favorites WHERE workspace_id = ?', [
+      workspaceId,
+    ]);
     return (result[0]?.values?.length ?? 0) > 0;
   }
 
   addWorkspaceFavorite(workspaceId: string): void {
-    this.db.run('INSERT OR IGNORE INTO workspace_favorites (workspace_id) VALUES (?)', [workspaceId]);
+    this.db.run('INSERT OR IGNORE INTO workspace_favorites (workspace_id) VALUES (?)', [
+      workspaceId,
+    ]);
     this._flush();
   }
 
@@ -502,7 +568,9 @@ export class StorageService {
   // ─── lakehouse_favorites ────────────────────────────────────────────────
 
   isLakehouseFavorite(lakehouseId: string): boolean {
-    const result = this.db.exec('SELECT id FROM lakehouse_favorites WHERE lakehouse_id = ?', [lakehouseId]);
+    const result = this.db.exec('SELECT id FROM lakehouse_favorites WHERE lakehouse_id = ?', [
+      lakehouseId,
+    ]);
     return (result[0]?.values?.length ?? 0) > 0;
   }
 
@@ -520,8 +588,10 @@ export class StorageService {
   }
 
   getLakehouseFavorites(): { tenantId: string; workspaceId: string; lakehouseId: string }[] {
-    const result = this.db.exec('SELECT tenant_id, workspace_id, lakehouse_id FROM lakehouse_favorites');
-    return this._rows(result).map(r => ({
+    const result = this.db.exec(
+      'SELECT tenant_id, workspace_id, lakehouse_id FROM lakehouse_favorites',
+    );
+    return this._rows(result).map((r) => ({
       tenantId: r['tenant_id'] as string,
       workspaceId: r['workspace_id'] as string,
       lakehouseId: r['lakehouse_id'] as string,
@@ -539,7 +609,10 @@ export class StorageService {
     this._flush();
   }
 
-  getLastMaintenance(lakehouseId: string, tableName: string): { triggeredAt: string; status: string } | undefined {
+  getLastMaintenance(
+    lakehouseId: string,
+    tableName: string,
+  ): { triggeredAt: string; status: string } | undefined {
     const result = this.db.exec(
       'SELECT triggered_at, status FROM lakehouse_maintenance WHERE lakehouse_id = ? AND table_name = ? LIMIT 1',
       [lakehouseId, tableName],
@@ -594,16 +667,18 @@ export class StorageService {
 
   getAnnotations(pipelineId: string): Annotation[] {
     const result = this.db.exec(
-      'SELECT * FROM annotations WHERE pipeline_id = ? ORDER BY date DESC', [pipelineId],
+      'SELECT * FROM annotations WHERE pipeline_id = ? ORDER BY date DESC',
+      [pipelineId],
     );
-    return this._rows(result).map(r => this._mapAnnotation(r));
+    return this._rows(result).map((r) => this._mapAnnotation(r));
   }
 
   addAnnotation(ann: Omit<Annotation, 'id' | 'createdAt'>): void {
-    this.db.run(
-      'INSERT INTO annotations (pipeline_id, date, note) VALUES (?,?,?)',
-      [ann.pipelineId, ann.date, ann.note],
-    );
+    this.db.run('INSERT INTO annotations (pipeline_id, date, note) VALUES (?,?,?)', [
+      ann.pipelineId,
+      ann.date,
+      ann.note,
+    ]);
     this._flush();
   }
 
@@ -618,7 +693,7 @@ export class StorageService {
     );
 
     const allRuns = (result[0]?.values ?? []) as [string, string][];
-    const failed = allRuns.filter(r => r[1] === 'Failed');
+    const failed = allRuns.filter((r) => r[1] === 'Failed');
     const warnings: PatternWarning[] = [];
 
     if (failed.length < 3 || failed.length / allRuns.length < 0.3) return warnings;
@@ -629,7 +704,12 @@ export class StorageService {
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     weekdayCounts.forEach((count, day) => {
       if (count > 0 && count / failed.length >= 0.3) {
-        warnings.push({ type: 'weekday', description: `Often fails on ${dayNames[day]}`, failureCount: count, totalFailures: failed.length });
+        warnings.push({
+          type: 'weekday',
+          description: `Often fails on ${dayNames[day]}`,
+          failureCount: count,
+          totalFailures: failed.length,
+        });
       }
     });
 
@@ -639,7 +719,12 @@ export class StorageService {
     for (let h = 0; h < 24; h += 2) {
       const count = (hourCounts[h] ?? 0) + (hourCounts[h + 1] ?? 0);
       if (count > 0 && count / failed.length >= 0.3) {
-        warnings.push({ type: 'timerange', description: `Often fails between ${String(h).padStart(2, '0')}:00–${String(h + 2).padStart(2, '0')}:00`, failureCount: count, totalFailures: failed.length });
+        warnings.push({
+          type: 'timerange',
+          description: `Often fails between ${String(h).padStart(2, '0')}:00–${String(h + 2).padStart(2, '0')}:00`,
+          failureCount: count,
+          totalFailures: failed.length,
+        });
       }
     }
     return warnings;
@@ -650,15 +735,26 @@ export class StorageService {
   private cleanupOldData(): void {
     const days = vscode.workspace.getConfiguration('fabricPulse').get<number>('retentionDays', 90);
     const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
-    this.db.run('DELETE FROM pipeline_runs WHERE start_time < ? OR (start_time IS NULL AND created_at < ?)', [cutoff, cutoff]);
+    this.db.run(
+      'DELETE FROM pipeline_runs WHERE start_time < ? OR (start_time IS NULL AND created_at < ?)',
+      [cutoff, cutoff],
+    );
   }
 
   exportRunsCsv(pipelineId: string, since?: string): string {
     const runs = this.getRuns(pipelineId, since);
     const headers = ['run_id', 'status', 'start_time', 'end_time', 'duration_ms', 'error_message'];
-    const rows = runs.map(r =>
-      [r.runId, r.status, r.startTime ?? '', r.endTime ?? '', String(r.durationMs ?? ''), r.errorMessage ?? '']
-        .map(v => csvCell(v)).join(','),
+    const rows = runs.map((r) =>
+      [
+        r.runId,
+        r.status,
+        r.startTime ?? '',
+        r.endTime ?? '',
+        String(r.durationMs ?? ''),
+        r.errorMessage ?? '',
+      ]
+        .map((v) => csvCell(v))
+        .join(','),
     );
     return [headers.join(','), ...rows].join('\n');
   }
@@ -677,7 +773,12 @@ export class StorageService {
       clearTimeout(this._flushTimer);
       this._flushTimer = undefined;
     }
-    try { this._flushSync(); this.db.close(); } catch { /* ignore */ }
+    try {
+      this._flushSync();
+      this.db.close();
+    } catch {
+      /* ignore */
+    }
   }
 
   // ─── Row helpers ──────────────────────────────────────────────────────────
@@ -686,49 +787,49 @@ export class StorageService {
   private _rows(result: ReturnType<SqlDatabase['exec']>): Record<string, unknown>[] {
     if (!result[0]) return [];
     const { columns, values } = result[0];
-    return values.map(row => Object.fromEntries(columns.map((c, i) => [c, row[i]])));
+    return values.map((row) => Object.fromEntries(columns.map((c, i) => [c, row[i]])));
   }
 
   private _mapRun(r: Record<string, unknown>): StoredRun {
     return {
-      id:            r['id'] as number | undefined,
-      tenantId:      r['tenant_id'] as string,
-      workspaceId:   r['workspace_id'] as string,
-      pipelineId:    r['pipeline_id'] as string,
-      pipelineName:  r['pipeline_name'] as string,
+      id: r['id'] as number | undefined,
+      tenantId: r['tenant_id'] as string,
+      workspaceId: r['workspace_id'] as string,
+      pipelineId: r['pipeline_id'] as string,
+      pipelineName: r['pipeline_name'] as string,
       workspaceName: r['workspace_name'] as string,
-      runId:         r['run_id'] as string,
-      status:        r['status'] as string,
-      startTime:     r['start_time'] as string,
-      endTime:       (r['end_time'] as string | null) ?? undefined,
-      durationMs:    (r['duration_ms'] as number | null) ?? undefined,
-      errorMessage:  (r['error_message'] as string | null) ?? undefined,
-      createdAt:     (r['created_at'] as string | null) ?? undefined,
-      itemType:      (r['item_type'] as string | null) ?? 'pipeline',
+      runId: r['run_id'] as string,
+      status: r['status'] as string,
+      startTime: r['start_time'] as string,
+      endTime: (r['end_time'] as string | null) ?? undefined,
+      durationMs: (r['duration_ms'] as number | null) ?? undefined,
+      errorMessage: (r['error_message'] as string | null) ?? undefined,
+      createdAt: (r['created_at'] as string | null) ?? undefined,
+      itemType: (r['item_type'] as string | null) ?? 'pipeline',
     };
   }
 
   private _mapFav(r: Record<string, unknown>): Favorite {
     return {
-      id:                  r['id'] as number | undefined,
-      tenantId:            r['tenant_id'] as string,
-      workspaceId:         r['workspace_id'] as string,
-      pipelineId:          r['pipeline_id'] as string,
-      alertEnabled:        (r['alert_enabled'] as number) === 1,
+      id: r['id'] as number | undefined,
+      tenantId: r['tenant_id'] as string,
+      workspaceId: r['workspace_id'] as string,
+      pipelineId: r['pipeline_id'] as string,
+      alertEnabled: (r['alert_enabled'] as number) === 1,
       durationThresholdMs: (r['duration_threshold_ms'] as number | null) ?? undefined,
-      itemType:            (r['item_type'] as string | null) ?? 'pipeline',
-      displayName:         (r['display_name'] as string | null) ?? undefined,
-      workspaceName:       (r['workspace_name'] as string | null) ?? undefined,
+      itemType: (r['item_type'] as string | null) ?? 'pipeline',
+      displayName: (r['display_name'] as string | null) ?? undefined,
+      workspaceName: (r['workspace_name'] as string | null) ?? undefined,
     };
   }
 
   private _mapAnnotation(r: Record<string, unknown>): Annotation {
     return {
-      id:         r['id'] as number | undefined,
+      id: r['id'] as number | undefined,
       pipelineId: r['pipeline_id'] as string,
-      date:       r['date'] as string,
-      note:       r['note'] as string,
-      createdAt:  (r['created_at'] as string | null) ?? undefined,
+      date: r['date'] as string,
+      note: r['note'] as string,
+      createdAt: (r['created_at'] as string | null) ?? undefined,
     };
   }
 }

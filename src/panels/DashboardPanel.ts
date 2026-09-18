@@ -118,7 +118,13 @@ export class DashboardPanel {
     );
 
     DashboardPanel.currentPanel = new DashboardPanel(
-      panel, extensionUri, fabricApi, storage, alertService, context, notifications,
+      panel,
+      extensionUri,
+      fabricApi,
+      storage,
+      alertService,
+      context,
+      notifications,
     );
     return DashboardPanel.currentPanel;
   }
@@ -151,7 +157,7 @@ export class DashboardPanel {
     );
 
     this._disposables.push(
-      this._fabricApi.auth.onDidChangeAuthState(state => this._onAuthStateChange(state)),
+      this._fabricApi.auth.onDidChangeAuthState((state) => this._onAuthStateChange(state)),
     );
 
     // Renew the token in the background, between polls. Because AuthService
@@ -176,20 +182,25 @@ export class DashboardPanel {
 
     const previous = this._authState?.phase;
 
-    this._authState = state.phase === 'idle'
-      ? undefined
-      : { phase: state.phase, message: state.message };
+    this._authState =
+      state.phase === 'idle' ? undefined : { phase: state.phase, message: state.message };
 
     // Only on the transition into 'failed', so a tenant that keeps failing
     // doesn't produce a notification per refresh.
     if (state.phase === 'failed' && previous !== 'failed') {
-      this._notifications.add('warning', 'Auth', `Sign-in required — ${state.message ?? 'the session has expired.'}`);
+      this._notifications.add(
+        'warning',
+        'Auth',
+        `Sign-in required — ${state.message ?? 'the session has expired.'}`,
+      );
       void vscode.window
         .showWarningMessage(
           `FabricPulse: sign-in required — ${state.message ?? 'the session has expired.'}`,
           'Sign in',
         )
-        .then(choice => { if (choice === 'Sign in') void this._reauthenticate(); });
+        .then((choice) => {
+          if (choice === 'Sign in') void this._reauthenticate();
+        });
     }
 
     this._postState();
@@ -245,7 +256,7 @@ export class DashboardPanel {
     // Mirrors the webview's auto-enable, but is known *before* the fetch starts.
     if (!this._favoritesDefaultApplied) {
       this._favoritesDefaultApplied = true;
-      const favs = this._storage.getFavorites().filter(f => f.tenantId === this._currentTenantId);
+      const favs = this._storage.getFavorites().filter((f) => f.tenantId === this._currentTenantId);
       if (favs.length > 0) this._favoritesOnlyMode = true;
     }
 
@@ -257,10 +268,9 @@ export class DashboardPanel {
     this._postState();
 
     const cfg = vscode.workspace.getConfiguration('fabricPulse');
-    const blacklist = (cfg.get<string[]>('blacklistedWorkspaces', [])).map(s => s.toLowerCase());
+    const blacklist = cfg.get<string[]>('blacklistedWorkspaces', []).map((s) => s.toLowerCase());
     const isBlacklisted = (ws: { id: string; displayName: string }) =>
-      blacklist.includes(ws.id.toLowerCase()) ||
-      blacklist.includes(ws.displayName.toLowerCase());
+      blacklist.includes(ws.id.toLowerCase()) || blacklist.includes(ws.displayName.toLowerCase());
 
     try {
       // ── No workspace selected: serve from SQLite cache when possible ──────
@@ -274,19 +284,22 @@ export class DashboardPanel {
 
         if (cachedWorkspaces.length > 0) {
           // Cache is populated — rebuild the view entirely from SQLite, zero API calls
-          this._workspaces = cachedWorkspaces.filter(ws => !isBlacklisted(ws)).map(ws => ({
-            ...ws,
-            isFavorite: this._storage.isWorkspaceFavorite(ws.id),
-          }));
+          this._workspaces = cachedWorkspaces
+            .filter((ws) => !isBlacklisted(ws))
+            .map((ws) => ({
+              ...ws,
+              isFavorite: this._storage.isWorkspaceFavorite(ws.id),
+            }));
 
-          const tenantFavorites = this._storage.getFavorites()
-            .filter(f => f.tenantId === this._currentTenantId);
+          const tenantFavorites = this._storage
+            .getFavorites()
+            .filter((f) => f.tenantId === this._currentTenantId);
 
           // getKnownWorkspaces derives from pipeline_runs, so the workspace of a
           // favorite that has never run is missing from the picker. Add it from
           // the name stored when the item was starred.
           for (const fav of tenantFavorites) {
-            if (this._workspaces.some(w => w.id === fav.workspaceId)) continue;
+            if (this._workspaces.some((w) => w.id === fav.workspaceId)) continue;
             const ws = {
               id: fav.workspaceId,
               displayName: fav.workspaceName ?? fav.workspaceId,
@@ -297,11 +310,20 @@ export class DashboardPanel {
           }
 
           const cachedItems = this._storage.getKnownPipelines(this._currentTenantId);
-          this._pipelines = cachedItems.map(p => {
+          this._pipelines = cachedItems.map((p) => {
             const fav = this._storage.getFavorite(p.id);
             const localRun = this._storage.getLastRun(p.id);
             const lastRun: PipelineRun | undefined = localRun
-              ? { id: String(localRun.id), pipelineId: p.id, runId: localRun.runId, status: localRun.status as PipelineRun['status'], startTime: localRun.startTime, endTime: localRun.endTime, durationMs: localRun.durationMs, errorMessage: localRun.errorMessage }
+              ? {
+                  id: String(localRun.id),
+                  pipelineId: p.id,
+                  runId: localRun.runId,
+                  status: localRun.status as PipelineRun['status'],
+                  startTime: localRun.startTime,
+                  endTime: localRun.endTime,
+                  durationMs: localRun.durationMs,
+                  errorMessage: localRun.errorMessage,
+                }
               : undefined;
             const { rate } = this._storage.getSuccessRate(p.id, 7);
             const durStats = this._storage.getDurationStats(p.id);
@@ -325,8 +347,8 @@ export class DashboardPanel {
           // recorded yet is absent from the query above and used to stay
           // invisible until its first run landed. Show it as a row with empty
           // statistics — it is starred, so the user expects to see it.
-          const seenIds = new Set(cachedItems.map(p => p.id));
-          const knownWsIds = new Set(this._workspaces.map(w => w.id));
+          const seenIds = new Set(cachedItems.map((p) => p.id));
+          const knownWsIds = new Set(this._workspaces.map((w) => w.id));
           for (const fav of tenantFavorites) {
             if (seenIds.has(fav.pipelineId)) continue;
             if (!knownWsIds.has(fav.workspaceId)) continue; // workspace blacklisted
@@ -347,69 +369,86 @@ export class DashboardPanel {
 
           const pollingMs = cfg.get<number>('pollingInterval', 60) * 1000;
           const favorites = tenantFavorites;
-          const wsMap = new Map(this._workspaces.map(w => [w.id, w]));
+          const wsMap = new Map(this._workspaces.map((w) => [w.id, w]));
           // A forced refresh re-fetches every favorite; otherwise only stale ones.
           const staleFavorites = force
             ? favorites
-            : favorites.filter(f => {
-              const lastFetched = this._runsFetchedAt.get(f.pipelineId) ?? 0;
-              return (Date.now() - lastFetched) >= pollingMs;
-            });
+            : favorites.filter((f) => {
+                const lastFetched = this._runsFetchedAt.get(f.pipelineId) ?? 0;
+                return Date.now() - lastFetched >= pollingMs;
+              });
 
           const favBatchSize = cfg.get<number>('batchSize', 5);
           for (let i = 0; i < staleFavorites.length; i += favBatchSize) {
             const batch = staleFavorites.slice(i, i + favBatchSize);
-            await Promise.all(batch.map(async fav => {
-              const item = this._pipelines.find(p => p.id === fav.pipelineId);
-              let run: PipelineRun | undefined;
+            await Promise.all(
+              batch.map(async (fav) => {
+                const item = this._pipelines.find((p) => p.id === fav.pipelineId);
+                let run: PipelineRun | undefined;
 
-              await Promise.all([
-                this._fetchSchedule({ id: fav.pipelineId, itemType: fav.itemType as ItemType | undefined }, fav.workspaceId),
-                (async () => {
-                  try {
-                    run = await this._fetchLastRun(fav.workspaceId, fav.pipelineId, fav.itemType as ItemType | undefined);
-                    if (run) {
-                      this._storage.upsertRunsBatch([{
-                        tenantId: this._currentTenantId,
-                        workspaceId: fav.workspaceId,
-                        pipelineId: fav.pipelineId,
-                        pipelineName: item?.displayName ?? fav.displayName ?? fav.pipelineId,
-                        workspaceName: wsMap.get(fav.workspaceId)?.displayName ?? fav.workspaceName ?? fav.workspaceId,
-                        runId: run.runId,
-                        status: run.status,
-                        startTime: run.startTime,
-                        endTime: run.endTime,
-                        durationMs: run.durationMs,
-                        errorMessage: run.errorMessage,
-                        itemType: fav.itemType ?? 'pipeline',
-                      }]);
+                await Promise.all([
+                  this._fetchSchedule(
+                    { id: fav.pipelineId, itemType: fav.itemType as ItemType | undefined },
+                    fav.workspaceId,
+                  ),
+                  (async () => {
+                    try {
+                      run = await this._fetchLastRun(
+                        fav.workspaceId,
+                        fav.pipelineId,
+                        fav.itemType as ItemType | undefined,
+                      );
+                      if (run) {
+                        this._storage.upsertRunsBatch([
+                          {
+                            tenantId: this._currentTenantId,
+                            workspaceId: fav.workspaceId,
+                            pipelineId: fav.pipelineId,
+                            pipelineName: item?.displayName ?? fav.displayName ?? fav.pipelineId,
+                            workspaceName:
+                              wsMap.get(fav.workspaceId)?.displayName ??
+                              fav.workspaceName ??
+                              fav.workspaceId,
+                            runId: run.runId,
+                            status: run.status,
+                            startTime: run.startTime,
+                            endTime: run.endTime,
+                            durationMs: run.durationMs,
+                            errorMessage: run.errorMessage,
+                            itemType: fav.itemType ?? 'pipeline',
+                          },
+                        ]);
+                      }
+                      this._runsFetchedAt.set(fav.pipelineId, Date.now());
+                    } catch (err) {
+                      console.warn(
+                        `[FabricPulse] Could not fetch run for favorite ${fav.pipelineId}:`,
+                        err,
+                      );
                     }
-                    this._runsFetchedAt.set(fav.pipelineId, Date.now());
-                  } catch (err) {
-                    console.warn(`[FabricPulse] Could not fetch run for favorite ${fav.pipelineId}:`, err);
-                  }
-                })(),
-              ]);
+                  })(),
+                ]);
 
-              const idx = this._pipelines.findIndex(p => p.id === fav.pipelineId);
-              if (idx !== -1) {
-                // Stats are re-read rather than carried over: a favorite that had
-                // no run until a moment ago would otherwise show "0 runs" next to
-                // the run it just fetched.
-                const { rate } = this._storage.getSuccessRate(fav.pipelineId, 7);
-                const durStats = this._storage.getDurationStats(fav.pipelineId);
-                this._pipelines[idx] = {
-                  ...this._pipelines[idx],
-                  ...(run ? { lastRun: run } : {}),
-                  successRate7d: rate,
-                  avgDurationMs: durStats.avg,
-                  maxDurationMs: durStats.max,
-                  minDurationMs: durStats.min,
-                  cachedRunCount: this._storage.getRunCount(fav.pipelineId),
-                  ...this._scheduleFields(fav.pipelineId),
-                };
-              }
-            }));
+                const idx = this._pipelines.findIndex((p) => p.id === fav.pipelineId);
+                if (idx !== -1) {
+                  // Stats are re-read rather than carried over: a favorite that had
+                  // no run until a moment ago would otherwise show "0 runs" next to
+                  // the run it just fetched.
+                  const { rate } = this._storage.getSuccessRate(fav.pipelineId, 7);
+                  const durStats = this._storage.getDurationStats(fav.pipelineId);
+                  this._pipelines[idx] = {
+                    ...this._pipelines[idx],
+                    ...(run ? { lastRun: run } : {}),
+                    successRate7d: rate,
+                    avgDurationMs: durStats.avg,
+                    maxDurationMs: durStats.max,
+                    minDurationMs: durStats.min,
+                    cachedRunCount: this._storage.getRunCount(fav.pipelineId),
+                    ...this._scheduleFields(fav.pipelineId),
+                  };
+                }
+              }),
+            );
           }
 
           this._isFromCache = false;
@@ -422,25 +461,28 @@ export class DashboardPanel {
 
       // ── Workspace selected (or cache empty on first launch) ───────────────
       const rawWorkspaces = await this._fabricApi.getWorkspaces(this._currentTenantId);
-      const allWorkspaces = rawWorkspaces.filter(ws => !isBlacklisted(ws));
+      const allWorkspaces = rawWorkspaces.filter((ws) => !isBlacklisted(ws));
       if (allWorkspaces.length < rawWorkspaces.length) {
-        console.log(`[FabricPulse] Skipping ${rawWorkspaces.length - allWorkspaces.length} blacklisted workspace(s).`);
+        console.log(
+          `[FabricPulse] Skipping ${rawWorkspaces.length - allWorkspaces.length} blacklisted workspace(s).`,
+        );
       }
-      this._workspaces = allWorkspaces.map(ws => ({
+      this._workspaces = allWorkspaces.map((ws) => ({
         ...ws,
         isFavorite: this._storage.isWorkspaceFavorite(ws.id),
       }));
       // Post workspaces immediately so the picker populates before items load
       this._postState();
 
-      const pollingMs    = cfg.get<number>('pollingInterval', 60) * 1000;
-      const batchSize    = cfg.get<number>('batchSize', 5);
+      const pollingMs = cfg.get<number>('pollingInterval', 60) * 1000;
+      const batchSize = cfg.get<number>('batchSize', 5);
       const batchDelayMs = cfg.get<number>('batchDelayMs', 2500);
       const batchThreshold = cfg.get<number>('batchThreshold', 10);
 
-      const filteredWorkspaces = (this._selectedWorkspaceId
-        ? this._workspaces.filter(w => w.id === this._selectedWorkspaceId)
-        : this._workspaces
+      const filteredWorkspaces = (
+        this._selectedWorkspaceId
+          ? this._workspaces.filter((w) => w.id === this._selectedWorkspaceId)
+          : this._workspaces
       ).sort((a, b) => (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0));
 
       // ── Phase 1: collect all items (pipelines + semantic models) with cached run data ──
@@ -448,7 +490,7 @@ export class DashboardPanel {
       const allMeta: ItemMeta[] = [];
 
       for (let wsIdx = 0; wsIdx < filteredWorkspaces.length; wsIdx++) {
-        if (wsIdx > 0) await new Promise(r => setTimeout(r, 500));
+        if (wsIdx > 0) await new Promise((r) => setTimeout(r, 500));
         const ws = filteredWorkspaces[wsIdx];
 
         // Sequential list calls: pipelines first warms up the auth token,
@@ -462,27 +504,42 @@ export class DashboardPanel {
         try {
           pipelines = await this._fabricApi.getPipelines(this._currentTenantId, ws.id);
         } catch (err) {
-          console.warn(`[FabricPulse] Error fetching pipelines for workspace ${ws.displayName}:`, err);
+          console.warn(
+            `[FabricPulse] Error fetching pipelines for workspace ${ws.displayName}:`,
+            err,
+          );
         }
         try {
           models = await this._fabricApi.getSemanticModels(this._currentTenantId, ws.id);
         } catch (err) {
-          console.warn(`[FabricPulse] Error fetching semantic models for workspace ${ws.displayName}:`, err);
+          console.warn(
+            `[FabricPulse] Error fetching semantic models for workspace ${ws.displayName}:`,
+            err,
+          );
         }
         try {
           notebooks = await this._fabricApi.getNotebooks(this._currentTenantId, ws.id);
         } catch (err) {
-          console.warn(`[FabricPulse] Error fetching notebooks for workspace ${ws.displayName}:`, err);
+          console.warn(
+            `[FabricPulse] Error fetching notebooks for workspace ${ws.displayName}:`,
+            err,
+          );
         }
         try {
           copyJobs = await this._fabricApi.getCopyJobs(this._currentTenantId, ws.id);
         } catch (err) {
-          console.warn(`[FabricPulse] Error fetching copy jobs for workspace ${ws.displayName}:`, err);
+          console.warn(
+            `[FabricPulse] Error fetching copy jobs for workspace ${ws.displayName}:`,
+            err,
+          );
         }
         try {
           dbtJobs = await this._fabricApi.getDbtJobs(this._currentTenantId, ws.id);
         } catch (err) {
-          console.warn(`[FabricPulse] Error fetching dbt jobs for workspace ${ws.displayName}:`, err);
+          console.warn(
+            `[FabricPulse] Error fetching dbt jobs for workspace ${ws.displayName}:`,
+            err,
+          );
         }
 
         const allItems = [...pipelines, ...models, ...notebooks, ...copyJobs, ...dbtJobs];
@@ -492,7 +549,16 @@ export class DashboardPanel {
           const fav = this._storage.getFavorite(p.id);
           const localRun = this._storage.getLastRun(p.id);
           const lastRun: PipelineRun | undefined = localRun
-            ? { id: String(localRun.id), pipelineId: p.id, runId: localRun.runId, status: localRun.status as PipelineRun['status'], startTime: localRun.startTime, endTime: localRun.endTime, durationMs: localRun.durationMs, errorMessage: localRun.errorMessage }
+            ? {
+                id: String(localRun.id),
+                pipelineId: p.id,
+                runId: localRun.runId,
+                status: localRun.status as PipelineRun['status'],
+                startTime: localRun.startTime,
+                endTime: localRun.endTime,
+                durationMs: localRun.durationMs,
+                errorMessage: localRun.errorMessage,
+              }
             : undefined;
           const { rate } = this._storage.getSuccessRate(p.id, 7);
           const durStats = this._storage.getDurationStats(p.id);
@@ -516,17 +582,17 @@ export class DashboardPanel {
       }
 
       // Show all items from cache immediately so the UI is populated
-      this._pipelines = allMeta.map(m => m.pipeline);
+      this._pipelines = allMeta.map((m) => m.pipeline);
       this._isFromCache = true;
       this._lastRefreshed = new Date().toISOString();
       this._postState();
 
       // ── Phase 2: fetch fresh runs for stale items, in batches ─────────────
       const staleMeta = allMeta
-        .filter(m => {
+        .filter((m) => {
           if (this._favoritesOnlyMode && !m.pipeline.isFavorite) return false;
           const lastFetched = this._runsFetchedAt.get(m.pipeline.id) ?? 0;
-          return (Date.now() - lastFetched) >= pollingMs;
+          return Date.now() - lastFetched >= pollingMs;
         })
         .sort((a, b) => (b.pipeline.isFavorite ? 1 : 0) - (a.pipeline.isFavorite ? 1 : 0));
 
@@ -535,7 +601,7 @@ export class DashboardPanel {
 
       for (let i = 0; i < staleMeta.length; i += batchSize) {
         if (useBatching && i > 0) {
-          await new Promise(r => setTimeout(r, batchDelayMs));
+          await new Promise((r) => setTimeout(r, batchDelayMs));
         }
 
         const batchNum = Math.floor(i / batchSize) + 1;
@@ -545,47 +611,54 @@ export class DashboardPanel {
         }
 
         const batch = staleMeta.slice(i, i + batchSize);
-        await Promise.all(batch.map(async ({ pipeline, ws }) => {
-          let run: PipelineRun | undefined;
+        await Promise.all(
+          batch.map(async ({ pipeline, ws }) => {
+            let run: PipelineRun | undefined;
 
-          // Runs and schedule are independent calls — fetch them concurrently.
-          await Promise.all([
-            this._fetchSchedule(pipeline, ws.id),
-            (async () => {
-              try {
-                run = await this._fetchLastRun(ws.id, pipeline.id, pipeline.itemType);
-                if (run) {
-                  this._storage.upsertRunsBatch([{
-                    tenantId: this._currentTenantId,
-                    workspaceId: ws.id,
-                    pipelineId: pipeline.id,
-                    pipelineName: pipeline.displayName,
-                    workspaceName: ws.displayName,
-                    runId: run.runId,
-                    status: run.status,
-                    startTime: run.startTime,
-                    endTime: run.endTime,
-                    durationMs: run.durationMs,
-                    errorMessage: run.errorMessage,
-                    itemType: pipeline.itemType ?? 'pipeline',
-                  }]);
+            // Runs and schedule are independent calls — fetch them concurrently.
+            await Promise.all([
+              this._fetchSchedule(pipeline, ws.id),
+              (async () => {
+                try {
+                  run = await this._fetchLastRun(ws.id, pipeline.id, pipeline.itemType);
+                  if (run) {
+                    this._storage.upsertRunsBatch([
+                      {
+                        tenantId: this._currentTenantId,
+                        workspaceId: ws.id,
+                        pipelineId: pipeline.id,
+                        pipelineName: pipeline.displayName,
+                        workspaceName: ws.displayName,
+                        runId: run.runId,
+                        status: run.status,
+                        startTime: run.startTime,
+                        endTime: run.endTime,
+                        durationMs: run.durationMs,
+                        errorMessage: run.errorMessage,
+                        itemType: pipeline.itemType ?? 'pipeline',
+                      },
+                    ]);
+                  }
+                  this._runsFetchedAt.set(pipeline.id, Date.now());
+                } catch (err) {
+                  console.warn(
+                    `[FabricPulse] Could not fetch runs for ${pipeline.itemType ?? 'pipeline'} ${pipeline.displayName}:`,
+                    err,
+                  );
                 }
-                this._runsFetchedAt.set(pipeline.id, Date.now());
-              } catch (err) {
-                console.warn(`[FabricPulse] Could not fetch runs for ${pipeline.itemType ?? 'pipeline'} ${pipeline.displayName}:`, err);
-              }
-            })(),
-          ]);
+              })(),
+            ]);
 
-          const idx = this._pipelines.findIndex(x => x.id === pipeline.id);
-          if (idx !== -1) {
-            this._pipelines[idx] = {
-              ...this._pipelines[idx],
-              ...(run ? { lastRun: run } : {}),
-              ...this._scheduleFields(pipeline.id),
-            };
-          }
-        }));
+            const idx = this._pipelines.findIndex((x) => x.id === pipeline.id);
+            if (idx !== -1) {
+              this._pipelines[idx] = {
+                ...this._pipelines[idx],
+                ...(run ? { lastRun: run } : {}),
+                ...this._scheduleFields(pipeline.id),
+              };
+            }
+          }),
+        );
 
         if (useBatching) {
           this._batchProgress = { done: batchNum, total: totalBatches };
@@ -647,28 +720,35 @@ export class DashboardPanel {
 
       case 'blacklistWorkspace':
         if (!isUuid(msg.workspaceId)) return fail('bad workspaceId');
-        if (typeof msg.workspaceName !== 'string' || msg.workspaceName.length > 256) return fail('bad workspaceName');
+        if (typeof msg.workspaceName !== 'string' || msg.workspaceName.length > 256)
+          return fail('bad workspaceName');
         break;
 
       case 'toggleFavorite':
       case 'refreshPipeline':
       case 'fetchPipelineHistory':
       case 'rerunPipeline':
-        if (!isUuid(msg.pipelineId) || !isUuid(msg.workspaceId)) return fail('bad pipelineId/workspaceId');
+        if (!isUuid(msg.pipelineId) || !isUuid(msg.workspaceId))
+          return fail('bad pipelineId/workspaceId');
         break;
 
       case 'openInFabric':
-        if (!isUuid(msg.pipelineId) || !isUuid(msg.workspaceId) || !isUuid(msg.tenantId)) return fail('bad UUID');
+        if (!isUuid(msg.pipelineId) || !isUuid(msg.workspaceId) || !isUuid(msg.tenantId))
+          return fail('bad UUID');
         break;
 
       case 'viewMonitor':
-        if (!isUuid(msg.pipelineId) || !isUuid(msg.workspaceId)) return fail('bad pipelineId/workspaceId');
+        if (!isUuid(msg.pipelineId) || !isUuid(msg.workspaceId))
+          return fail('bad pipelineId/workspaceId');
         break;
 
       case 'viewHistory':
-        if (!isUuid(msg.pipelineId) || !isUuid(msg.workspaceId)) return fail('bad pipelineId/workspaceId');
-        if (typeof msg.pipelineName !== 'string' || msg.pipelineName.length > 256) return fail('bad pipelineName');
-        if (typeof msg.workspaceName !== 'string' || msg.workspaceName.length > 256) return fail('bad workspaceName');
+        if (!isUuid(msg.pipelineId) || !isUuid(msg.workspaceId))
+          return fail('bad pipelineId/workspaceId');
+        if (typeof msg.pipelineName !== 'string' || msg.pipelineName.length > 256)
+          return fail('bad pipelineName');
+        if (typeof msg.workspaceName !== 'string' || msg.workspaceName.length > 256)
+          return fail('bad workspaceName');
         break;
 
       case 'copyRunId':
@@ -688,11 +768,9 @@ export class DashboardPanel {
   }
 
   private async _handleMessage(msg: WebviewToExtMsg): Promise<void> {
-
     if (!this._validateMsg(msg)) return;
 
     switch (msg.type) {
-
       case 'ready':
         // Force a live refresh on first open: this acquires the auth token and
         // fetches fresh runs immediately. Phase 1 still paints cached rows first,
@@ -736,7 +814,7 @@ export class DashboardPanel {
         } else {
           this._storage.addWorkspaceFavorite(msg.workspaceId);
         }
-        const ws = this._workspaces.find(w => w.id === msg.workspaceId);
+        const ws = this._workspaces.find((w) => w.id === msg.workspaceId);
         if (ws) ws.isFavorite = !isFavWs;
         this._postState();
         break;
@@ -746,21 +824,29 @@ export class DashboardPanel {
         const cfg2 = vscode.workspace.getConfiguration('fabricPulse');
         const current = cfg2.get<string[]>('blacklistedWorkspaces', []);
         if (!current.includes(msg.workspaceId)) {
-          await cfg2.update('blacklistedWorkspaces', [...current, msg.workspaceId], vscode.ConfigurationTarget.Global);
+          await cfg2.update(
+            'blacklistedWorkspaces',
+            [...current, msg.workspaceId],
+            vscode.ConfigurationTarget.Global,
+          );
         }
-        this._workspaces = this._workspaces.filter(w => w.id !== msg.workspaceId);
+        this._workspaces = this._workspaces.filter((w) => w.id !== msg.workspaceId);
         if (this._selectedWorkspaceId === msg.workspaceId) {
           this._selectedWorkspaceId = '';
         }
-        this._pipelines = this._pipelines.filter(p => p.workspaceId !== msg.workspaceId);
+        this._pipelines = this._pipelines.filter((p) => p.workspaceId !== msg.workspaceId);
         this._postState();
-        this._post({ type: 'toast', message: `"${msg.workspaceName}" ajouté à la blacklist`, level: 'info' });
+        this._post({
+          type: 'toast',
+          message: `"${msg.workspaceName}" ajouté à la blacklist`,
+          level: 'info',
+        });
         break;
       }
 
       case 'toggleFavorite': {
         const isFav = this._storage.isFavorite(msg.pipelineId);
-        const pl = this._pipelines.find(p => p.id === msg.pipelineId);
+        const pl = this._pipelines.find((p) => p.id === msg.pipelineId);
         if (isFav) {
           this._storage.removeFavorite(msg.pipelineId);
         } else {
@@ -787,44 +873,54 @@ export class DashboardPanel {
       }
 
       case 'refreshPipeline': {
-        const target = this._pipelines.find(p => p.id === msg.pipelineId);
+        const target = this._pipelines.find((p) => p.id === msg.pipelineId);
         if (!target) break;
         try {
           const itemType = (msg.itemType ?? target.itemType) as ItemType | undefined;
           await this._refreshItemLastRun(msg.workspaceId, msg.pipelineId, itemType);
         } catch (err: unknown) {
-          this._post({ type: 'toast', message: err instanceof Error ? err.message : String(err), level: 'error' });
+          this._post({
+            type: 'toast',
+            message: err instanceof Error ? err.message : String(err),
+            level: 'error',
+          });
         }
         break;
       }
 
       case 'fetchPipelineHistory': {
-        const target = this._pipelines.find(p => p.id === msg.pipelineId);
+        const target = this._pipelines.find((p) => p.id === msg.pipelineId);
         if (!target) break;
-        this._post({ type: 'toast', message: `Fetching history for "${target.displayName}"…`, level: 'info' });
+        this._post({
+          type: 'toast',
+          message: `Fetching history for "${target.displayName}"…`,
+          level: 'info',
+        });
         try {
           const itemType = (msg.itemType ?? target.itemType) as ItemType | undefined;
           const runs = await this._fetchAllRuns(msg.workspaceId, msg.pipelineId, itemType);
           if (runs.length > 0) {
-            this._storage.upsertRunsBatch(runs.map(r => ({
-              tenantId: this._currentTenantId,
-              workspaceId: msg.workspaceId,
-              pipelineId: msg.pipelineId,
-              pipelineName: target.displayName,
-              workspaceName: target.workspaceName,
-              runId: r.runId,
-              status: r.status,
-              startTime: r.startTime,
-              endTime: r.endTime,
-              durationMs: r.durationMs,
-              errorMessage: r.errorMessage,
-              itemType: target.itemType ?? 'pipeline',
-            })));
+            this._storage.upsertRunsBatch(
+              runs.map((r) => ({
+                tenantId: this._currentTenantId,
+                workspaceId: msg.workspaceId,
+                pipelineId: msg.pipelineId,
+                pipelineName: target.displayName,
+                workspaceName: target.workspaceName,
+                runId: r.runId,
+                status: r.status,
+                startTime: r.startTime,
+                endTime: r.endTime,
+                durationMs: r.durationMs,
+                errorMessage: r.errorMessage,
+                itemType: target.itemType ?? 'pipeline',
+              })),
+            );
           }
           this._runsFetchedAt.set(msg.pipelineId, Date.now());
           const { rate } = this._storage.getSuccessRate(msg.pipelineId, 7);
           const durStats = this._storage.getDurationStats(msg.pipelineId);
-          const idx = this._pipelines.findIndex(p => p.id === msg.pipelineId);
+          const idx = this._pipelines.findIndex((p) => p.id === msg.pipelineId);
           if (idx !== -1) {
             this._pipelines[idx] = {
               ...this._pipelines[idx],
@@ -835,33 +931,54 @@ export class DashboardPanel {
               minDurationMs: durStats.min,
             };
           }
-          this._post({ type: 'toast', message: `${runs.length} runs fetched for "${target.displayName}"`, level: 'success' });
+          this._post({
+            type: 'toast',
+            message: `${runs.length} runs fetched for "${target.displayName}"`,
+            level: 'success',
+          });
           this._postState();
         } catch (err: unknown) {
-          this._post({ type: 'toast', message: err instanceof Error ? err.message : String(err), level: 'error' });
+          this._post({
+            type: 'toast',
+            message: err instanceof Error ? err.message : String(err),
+            level: 'error',
+          });
         }
         break;
       }
 
       case 'rerunPipeline': {
-        const pipeline = this._pipelines.find(p => p.id === msg.pipelineId);
+        const pipeline = this._pipelines.find((p) => p.id === msg.pipelineId);
         try {
           const itemType = (msg.itemType ?? pipeline?.itemType) as ItemType | undefined;
           await this._triggerItem(msg.workspaceId, msg.pipelineId, itemType);
           const verb = itemType === 'semanticModel' ? 'refresh triggered' : 'triggered';
-          this._post({ type: 'toast', message: `"${pipeline?.displayName ?? msg.pipelineId}" ${verb}`, level: 'success' });
+          this._post({
+            type: 'toast',
+            message: `"${pipeline?.displayName ?? msg.pipelineId}" ${verb}`,
+            level: 'success',
+          });
           // Targeted, staged refresh of just this item so the new run's status
           // appears within ~30s instead of waiting for the next polling cycle.
           this._schedulePostTriggerRefresh(msg.workspaceId, msg.pipelineId, itemType);
         } catch (err: unknown) {
-          this._post({ type: 'toast', message: err instanceof Error ? err.message : String(err), level: 'error' });
+          this._post({
+            type: 'toast',
+            message: err instanceof Error ? err.message : String(err),
+            level: 'error',
+          });
         }
         break;
       }
 
       case 'copyRunId':
         await vscode.env.clipboard.writeText(msg.runId);
-        this._post({ type: 'toast', message: 'Run ID copied to clipboard', level: 'success', log: false });
+        this._post({
+          type: 'toast',
+          message: 'Run ID copied to clipboard',
+          level: 'success',
+          log: false,
+        });
         break;
 
       case 'openInFabric': {
@@ -904,32 +1021,38 @@ export class DashboardPanel {
 
       case 'viewHistory': {
         const { HistoryPanel } = await import('./HistoryPanel');
-        const target = this._pipelines.find(p => p.id === msg.pipelineId);
+        const target = this._pipelines.find((p) => p.id === msg.pipelineId);
         if (!target) break;
-        this._post({ type: 'toast', message: `Loading history for "${msg.pipelineName}"…`, level: 'info' });
+        this._post({
+          type: 'toast',
+          message: `Loading history for "${msg.pipelineName}"…`,
+          level: 'info',
+        });
         try {
           const itemType = (msg.itemType ?? target.itemType) as ItemType | undefined;
           const runs = await this._fetchAllRuns(msg.workspaceId, msg.pipelineId, itemType);
           if (runs.length > 0) {
-            this._storage.upsertRunsBatch(runs.map(r => ({
-              tenantId: this._currentTenantId,
-              workspaceId: msg.workspaceId,
-              pipelineId: msg.pipelineId,
-              pipelineName: msg.pipelineName,
-              workspaceName: msg.workspaceName,
-              runId: r.runId,
-              status: r.status,
-              startTime: r.startTime,
-              endTime: r.endTime,
-              durationMs: r.durationMs,
-              errorMessage: r.errorMessage,
-              itemType: target.itemType ?? 'pipeline',
-            })));
+            this._storage.upsertRunsBatch(
+              runs.map((r) => ({
+                tenantId: this._currentTenantId,
+                workspaceId: msg.workspaceId,
+                pipelineId: msg.pipelineId,
+                pipelineName: msg.pipelineName,
+                workspaceName: msg.workspaceName,
+                runId: r.runId,
+                status: r.status,
+                startTime: r.startTime,
+                endTime: r.endTime,
+                durationMs: r.durationMs,
+                errorMessage: r.errorMessage,
+                itemType: target.itemType ?? 'pipeline',
+              })),
+            );
           }
           this._runsFetchedAt.set(msg.pipelineId, Date.now());
           const { rate } = this._storage.getSuccessRate(msg.pipelineId, 7);
           const durStats = this._storage.getDurationStats(msg.pipelineId);
-          const idx = this._pipelines.findIndex(p => p.id === msg.pipelineId);
+          const idx = this._pipelines.findIndex((p) => p.id === msg.pipelineId);
           if (idx !== -1) {
             this._pipelines[idx] = {
               ...this._pipelines[idx],
@@ -942,7 +1065,11 @@ export class DashboardPanel {
           }
           this._postState();
         } catch (err: unknown) {
-          this._post({ type: 'toast', message: err instanceof Error ? err.message : String(err), level: 'error' });
+          this._post({
+            type: 'toast',
+            message: err instanceof Error ? err.message : String(err),
+            level: 'error',
+          });
         }
         HistoryPanel.createOrShow(this._extensionUri, target, this._storage, this._notifications);
         break;
@@ -957,7 +1084,7 @@ export class DashboardPanel {
         break;
 
       case 'exportHistory': {
-        const target = this._pipelines.find(p => p.id === msg.pipelineId);
+        const target = this._pipelines.find((p) => p.id === msg.pipelineId);
         if (!target) break;
         const csv = this._storage.exportRunsCsv(msg.pipelineId);
         const uri = await vscode.window.showSaveDialog({
@@ -976,24 +1103,42 @@ export class DashboardPanel {
   // ─── Item-type dispatch ─────────────────────────────────────────────────────
 
   /** Fetches the most recent run for an item, dispatching on its type. */
-  private _fetchLastRun(workspaceId: string, itemId: string, itemType?: ItemType): Promise<PipelineRun | undefined> {
+  private _fetchLastRun(
+    workspaceId: string,
+    itemId: string,
+    itemType?: ItemType,
+  ): Promise<PipelineRun | undefined> {
     switch (itemType ?? 'pipeline') {
-      case 'semanticModel': return this._fabricApi.getLastSemanticModelRun(this._currentTenantId, workspaceId, itemId);
-      case 'notebook':      return this._fabricApi.getLastNotebookRun(this._currentTenantId, workspaceId, itemId);
-      case 'copyJob':       return this._fabricApi.getLastCopyJobRun(this._currentTenantId, workspaceId, itemId);
-      case 'dbtJob':        return this._fabricApi.getLastDbtJobRun(this._currentTenantId, workspaceId, itemId);
-      default:              return this._fabricApi.getLastPipelineRun(this._currentTenantId, workspaceId, itemId);
+      case 'semanticModel':
+        return this._fabricApi.getLastSemanticModelRun(this._currentTenantId, workspaceId, itemId);
+      case 'notebook':
+        return this._fabricApi.getLastNotebookRun(this._currentTenantId, workspaceId, itemId);
+      case 'copyJob':
+        return this._fabricApi.getLastCopyJobRun(this._currentTenantId, workspaceId, itemId);
+      case 'dbtJob':
+        return this._fabricApi.getLastDbtJobRun(this._currentTenantId, workspaceId, itemId);
+      default:
+        return this._fabricApi.getLastPipelineRun(this._currentTenantId, workspaceId, itemId);
     }
   }
 
   /** Fetches the full run history for an item, dispatching on its type. */
-  private _fetchAllRuns(workspaceId: string, itemId: string, itemType?: ItemType): Promise<PipelineRun[]> {
+  private _fetchAllRuns(
+    workspaceId: string,
+    itemId: string,
+    itemType?: ItemType,
+  ): Promise<PipelineRun[]> {
     switch (itemType ?? 'pipeline') {
-      case 'semanticModel': return this._fabricApi.getSemanticModelRuns(this._currentTenantId, workspaceId, itemId);
-      case 'notebook':      return this._fabricApi.getNotebookRuns(this._currentTenantId, workspaceId, itemId);
-      case 'copyJob':       return this._fabricApi.getCopyJobRuns(this._currentTenantId, workspaceId, itemId);
-      case 'dbtJob':        return this._fabricApi.getDbtJobRuns(this._currentTenantId, workspaceId, itemId);
-      default:              return this._fabricApi.getPipelineRuns(this._currentTenantId, workspaceId, itemId);
+      case 'semanticModel':
+        return this._fabricApi.getSemanticModelRuns(this._currentTenantId, workspaceId, itemId);
+      case 'notebook':
+        return this._fabricApi.getNotebookRuns(this._currentTenantId, workspaceId, itemId);
+      case 'copyJob':
+        return this._fabricApi.getCopyJobRuns(this._currentTenantId, workspaceId, itemId);
+      case 'dbtJob':
+        return this._fabricApi.getDbtJobRuns(this._currentTenantId, workspaceId, itemId);
+      default:
+        return this._fabricApi.getPipelineRuns(this._currentTenantId, workspaceId, itemId);
     }
   }
 
@@ -1003,11 +1148,24 @@ export class DashboardPanel {
    *  in case it's ever reached anyway. */
   private _triggerItem(workspaceId: string, itemId: string, itemType?: ItemType): Promise<string> {
     switch (itemType ?? 'pipeline') {
-      case 'semanticModel': return this._fabricApi.triggerSemanticModelRefresh(this._currentTenantId, workspaceId, itemId);
-      case 'notebook':      return this._fabricApi.triggerNotebook(this._currentTenantId, workspaceId, itemId);
-      case 'copyJob':       return this._fabricApi.triggerCopyJob(this._currentTenantId, workspaceId, itemId);
-      case 'dbtJob':        return Promise.reject(new Error('dbt jobs cannot be triggered via the Fabric API (preview limitation) — use the schedule in the Fabric portal.'));
-      default:              return this._fabricApi.triggerPipeline(this._currentTenantId, workspaceId, itemId);
+      case 'semanticModel':
+        return this._fabricApi.triggerSemanticModelRefresh(
+          this._currentTenantId,
+          workspaceId,
+          itemId,
+        );
+      case 'notebook':
+        return this._fabricApi.triggerNotebook(this._currentTenantId, workspaceId, itemId);
+      case 'copyJob':
+        return this._fabricApi.triggerCopyJob(this._currentTenantId, workspaceId, itemId);
+      case 'dbtJob':
+        return Promise.reject(
+          new Error(
+            'dbt jobs cannot be triggered via the Fabric API (preview limitation) — use the schedule in the Fabric portal.',
+          ),
+        );
+      default:
+        return this._fabricApi.triggerPipeline(this._currentTenantId, workspaceId, itemId);
     }
   }
 
@@ -1021,33 +1179,35 @@ export class DashboardPanel {
     itemId: string,
     itemType?: ItemType,
   ): Promise<void> {
-    const target = this._pipelines.find(p => p.id === itemId);
+    const target = this._pipelines.find((p) => p.id === itemId);
     if (!target) return; // item no longer in view (tenant/workspace changed)
 
     const type = itemType ?? target.itemType;
     const run = await this._fetchLastRun(workspaceId, itemId, type);
     if (run) {
-      this._storage.upsertRunsBatch([{
-        tenantId: this._currentTenantId,
-        workspaceId,
-        pipelineId: itemId,
-        pipelineName: target.displayName,
-        workspaceName: target.workspaceName,
-        runId: run.runId,
-        status: run.status,
-        startTime: run.startTime,
-        endTime: run.endTime,
-        durationMs: run.durationMs,
-        errorMessage: run.errorMessage,
-        itemType: type ?? 'pipeline',
-      }]);
+      this._storage.upsertRunsBatch([
+        {
+          tenantId: this._currentTenantId,
+          workspaceId,
+          pipelineId: itemId,
+          pipelineName: target.displayName,
+          workspaceName: target.workspaceName,
+          runId: run.runId,
+          status: run.status,
+          startTime: run.startTime,
+          endTime: run.endTime,
+          durationMs: run.durationMs,
+          errorMessage: run.errorMessage,
+          itemType: type ?? 'pipeline',
+        },
+      ]);
     }
     this._runsFetchedAt.set(itemId, Date.now());
     await this._fetchSchedule({ id: itemId, itemType: type }, workspaceId);
 
     const { rate } = this._storage.getSuccessRate(itemId, 7);
     const durStats = this._storage.getDurationStats(itemId);
-    const idx = this._pipelines.findIndex(p => p.id === itemId);
+    const idx = this._pipelines.findIndex((p) => p.id === itemId);
     if (idx !== -1) {
       this._pipelines[idx] = {
         ...this._pipelines[idx],
@@ -1066,14 +1226,18 @@ export class DashboardPanel {
   /** Schedules a few targeted re-fetches of an item's last run after it was
    *  triggered, so the new run's status shows up without waiting for the next
    *  polling cycle. Each tick is non-fatal and skipped if the panel is gone. */
-  private _schedulePostTriggerRefresh(workspaceId: string, itemId: string, itemType?: ItemType): void {
+  private _schedulePostTriggerRefresh(
+    workspaceId: string,
+    itemId: string,
+    itemType?: ItemType,
+  ): void {
     // First tick catches the run starting (Queued/InProgress); later ticks
     // catch the final status. A pipeline/notebook run rarely appears instantly.
     const delaysMs = [8_000, 30_000];
     for (const delay of delaysMs) {
       setTimeout(() => {
         if (this._disposed) return;
-        this._refreshItemLastRun(workspaceId, itemId, itemType).catch(err =>
+        this._refreshItemLastRun(workspaceId, itemId, itemType).catch((err) =>
           console.warn(`[FabricPulse] post-trigger refresh failed for ${itemId}:`, err),
         );
       }, delay);
@@ -1091,11 +1255,41 @@ export class DashboardPanel {
     try {
       let info;
       switch (item.itemType ?? 'pipeline') {
-        case 'semanticModel': info = await this._fabricApi.getSemanticModelSchedule(this._currentTenantId, workspaceId, item.id); break;
-        case 'notebook':      info = await this._fabricApi.getNotebookSchedule(this._currentTenantId, workspaceId, item.id); break;
-        case 'copyJob':       info = await this._fabricApi.getCopyJobSchedule(this._currentTenantId, workspaceId, item.id); break;
-        case 'dbtJob':        info = await this._fabricApi.getDbtJobSchedule(this._currentTenantId, workspaceId, item.id); break;
-        default:              info = await this._fabricApi.getPipelineSchedule(this._currentTenantId, workspaceId, item.id); break;
+        case 'semanticModel':
+          info = await this._fabricApi.getSemanticModelSchedule(
+            this._currentTenantId,
+            workspaceId,
+            item.id,
+          );
+          break;
+        case 'notebook':
+          info = await this._fabricApi.getNotebookSchedule(
+            this._currentTenantId,
+            workspaceId,
+            item.id,
+          );
+          break;
+        case 'copyJob':
+          info = await this._fabricApi.getCopyJobSchedule(
+            this._currentTenantId,
+            workspaceId,
+            item.id,
+          );
+          break;
+        case 'dbtJob':
+          info = await this._fabricApi.getDbtJobSchedule(
+            this._currentTenantId,
+            workspaceId,
+            item.id,
+          );
+          break;
+        default:
+          info = await this._fabricApi.getPipelineSchedule(
+            this._currentTenantId,
+            workspaceId,
+            item.id,
+          );
+          break;
       }
       if (info !== undefined) this._schedulesById.set(item.id, info);
     } catch (err) {
@@ -1109,7 +1303,7 @@ export class DashboardPanel {
    *  Statistics are left undefined rather than zeroed so the table renders "—"
    *  (nothing known) instead of "0%" (ran, never succeeded). */
   private _favoriteRow(fav: Favorite): PipelineWithStatus {
-    const ws = this._workspaces.find(w => w.id === fav.workspaceId);
+    const ws = this._workspaces.find((w) => w.id === fav.workspaceId);
     return {
       id: fav.pipelineId,
       displayName: fav.displayName ?? fav.pipelineId,
@@ -1126,7 +1320,9 @@ export class DashboardPanel {
   }
 
   /** Schedule-derived fields for a pipeline row, read from the in-memory cache. */
-  private _scheduleFields(itemId: string): Pick<PipelineWithStatus, 'nextRunAt' | 'scheduleSummary' | 'scheduleEnabled'> {
+  private _scheduleFields(
+    itemId: string,
+  ): Pick<PipelineWithStatus, 'nextRunAt' | 'scheduleSummary' | 'scheduleEnabled'> {
     const s = this._schedulesById.get(itemId);
     return { nextRunAt: s?.nextRunAt, scheduleSummary: s?.summary, scheduleEnabled: s?.enabled };
   }
@@ -1157,7 +1353,9 @@ export class DashboardPanel {
     if (msg.type === 'toast' && msg.level !== 'info' && msg.log !== false) {
       this._notifications.add(msg.level, 'Dashboard', msg.message);
     }
-    if (this._disposed) { return; }
+    if (this._disposed) {
+      return;
+    }
     this._panel.webview.postMessage(msg);
   }
 
@@ -1171,9 +1369,7 @@ export class DashboardPanel {
     const cssUri = this._panel.webview.asWebviewUri(
       vscode.Uri.joinPath(webviewDir, 'dashboard.css'),
     );
-    const jsUri = this._panel.webview.asWebviewUri(
-      vscode.Uri.joinPath(webviewDir, 'dashboard.js'),
-    );
+    const jsUri = this._panel.webview.asWebviewUri(vscode.Uri.joinPath(webviewDir, 'dashboard.js'));
     const nonce = getNonce();
 
     const v = Date.now();
@@ -1196,7 +1392,7 @@ export class DashboardPanel {
     }
     DashboardPanel.currentPanel = undefined;
     this._panel.dispose();
-    this._disposables.forEach(d => d.dispose());
+    this._disposables.forEach((d) => d.dispose());
     this._disposables.length = 0;
   }
 }

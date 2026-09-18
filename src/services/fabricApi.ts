@@ -1,14 +1,21 @@
 import fetch from 'node-fetch';
 import { AuthService, FABRIC_SCOPE, POWERBI_SCOPE, ONELAKE_SCOPE } from './authService';
-import { Workspace, Pipeline, PipelineRun, RunStatus, Lakehouse, LakehouseTable } from '../models/types';
+import {
+  Workspace,
+  Pipeline,
+  PipelineRun,
+  RunStatus,
+  Lakehouse,
+  LakehouseTable,
+} from '../models/types';
 import { ScheduleDef, ScheduleInfo, combineSchedules } from './scheduleService';
 
 const BASE_URL = 'https://api.fabric.microsoft.com/v1';
 const POWERBI_BASE_URL = 'https://api.powerbi.com/v1.0/myorg';
 const ONELAKE_BASE = 'https://onelake.dfs.fabric.microsoft.com';
 const MAX_RETRIES = 3;
-const FETCH_TIMEOUT_MS = 30_000;        // 30 s per request — prevents indefinite hangs
-const MAX_RETRY_WAIT_MS = 60_000;       // never wait more than 60 s regardless of Retry-After header
+const FETCH_TIMEOUT_MS = 30_000; // 30 s per request — prevents indefinite hangs
+const MAX_RETRY_WAIT_MS = 60_000; // never wait more than 60 s regardless of Retry-After header
 
 /** Ensure a UTC datetime string from the Fabric API has a trailing 'Z'.
  *  The API returns fields named *Utc but omits the timezone designator,
@@ -18,7 +25,7 @@ function asUtcIso(s: string): string {
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** Wraps a fetch call with automatic retry on 429 (rate limit).
@@ -46,7 +53,9 @@ async function fetchWithRetry(
       ? Math.min(1000 * 2 ** attempt, 30_000) // exponential backoff, capped at 30 s
       : Math.min(retrySecs * 1000, MAX_RETRY_WAIT_MS);
 
-    console.warn(`[FabricPulse] 429 rate limit on ${label} — retrying in ${waitMs}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+    console.warn(
+      `[FabricPulse] 429 rate limit on ${label} — retrying in ${waitMs}ms (attempt ${attempt + 1}/${MAX_RETRIES})`,
+    );
     await sleep(waitMs);
   }
 
@@ -112,19 +121,19 @@ interface FabricRun {
 
 /** Power BI REST API refresh history item (different shape from Fabric jobs/instances). */
 interface PbiRefreshItem {
-  requestId?: string;                 // GUID — used as runId
-  id: number | string;                // internal numeric ID
-  refreshType?: string;               // 'Scheduled' | 'Manual' | 'ViaEnhancedApi' | …
-  startTime?: string;                 // ISO 8601 (already has Z)
-  endTime?: string;                   // ISO 8601 (already has Z)
-  status: string;                     // 'Completed' | 'Failed' | 'Unknown' | 'Disabled'
+  requestId?: string; // GUID — used as runId
+  id: number | string; // internal numeric ID
+  refreshType?: string; // 'Scheduled' | 'Manual' | 'ViaEnhancedApi' | …
+  startTime?: string; // ISO 8601 (already has Z)
+  endTime?: string; // ISO 8601 (already has Z)
+  status: string; // 'Completed' | 'Failed' | 'Unknown' | 'Disabled'
   serviceExceptionJson?: string | null; // JSON-encoded error details
 }
 
 interface PbiListResponse<T> {
   value: T[];
   '@odata.context'?: string;
-  '@odata.nextLink'?: string;  // OData pagination
+  '@odata.nextLink'?: string; // OData pagination
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -150,18 +159,20 @@ export class FabricApiService {
     label: string,
     options?: { method?: string; body?: string; json?: boolean },
   ): Promise<import('node-fetch').Response> {
-    const send = async (token: string) => fetchWithRetry(
-      () => fetch(url, {
-        method: options?.method ?? 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          ...(options?.json ? { 'Content-Type': 'application/json' } : {}),
-        },
-        body: options?.body,
-        timeout: FETCH_TIMEOUT_MS,
-      }),
-      label,
-    );
+    const send = async (token: string) =>
+      fetchWithRetry(
+        () =>
+          fetch(url, {
+            method: options?.method ?? 'GET',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              ...(options?.json ? { 'Content-Type': 'application/json' } : {}),
+            },
+            body: options?.body,
+            timeout: FETCH_TIMEOUT_MS,
+          }),
+        label,
+      );
 
     const response = await send(await this.auth.getToken(tenantId, scope));
     if (response.status !== 401) return response;
@@ -171,7 +182,9 @@ export class FabricApiService {
     const retried = await send(await this.auth.getToken(tenantId, scope));
 
     if (retried.status === 401) {
-      console.warn(`[FabricPulse] 401 on ${label} after renewal — credential is no longer valid, re-authentication required`);
+      console.warn(
+        `[FabricPulse] 401 on ${label} after renewal — credential is no longer valid, re-authentication required`,
+      );
       this.auth.clearCredential(tenantId);
     }
     return retried;
@@ -179,7 +192,11 @@ export class FabricApiService {
 
   // ─── Internal helpers — Fabric API ────────────────────────────────────────
 
-  private async request<T>(tenantId: string, path: string, options?: { method?: string; body?: string }): Promise<T> {
+  private async request<T>(
+    tenantId: string,
+    path: string,
+    options?: { method?: string; body?: string },
+  ): Promise<T> {
     const url = `${BASE_URL}${path}`;
 
     const response = await this._authedFetch(tenantId, FABRIC_SCOPE, url, path.split('?')[0], {
@@ -190,8 +207,15 @@ export class FabricApiService {
 
     if (!response.ok) {
       let detail = '';
-      try { const err = await response.json() as { message?: string; errorCode?: string }; detail = err.message ?? err.errorCode ?? ''; } catch { /* ignore */ }
-      throw new Error(`Fabric API error ${response.status} on ${path.split('?')[0]}${detail ? `: ${detail}` : ''}`);
+      try {
+        const err = (await response.json()) as { message?: string; errorCode?: string };
+        detail = err.message ?? err.errorCode ?? '';
+      } catch {
+        /* ignore */
+      }
+      throw new Error(
+        `Fabric API error ${response.status} on ${path.split('?')[0]}${detail ? `: ${detail}` : ''}`,
+      );
     }
 
     return response.json() as Promise<T>;
@@ -209,11 +233,15 @@ export class FabricApiService {
 
     while (url) {
       if (pages >= MAX_PAGES) {
-        console.warn(`[FabricPulse] listAll: hit ${MAX_PAGES}-page limit on ${path}, truncating results`);
+        console.warn(
+          `[FabricPulse] listAll: hit ${MAX_PAGES}-page limit on ${path}, truncating results`,
+        );
         break;
       }
       if (results.length >= MAX_ITEMS) {
-        console.warn(`[FabricPulse] listAll: hit ${MAX_ITEMS}-item limit on ${path}, truncating results`);
+        console.warn(
+          `[FabricPulse] listAll: hit ${MAX_ITEMS}-item limit on ${path}, truncating results`,
+        );
         break;
       }
 
@@ -225,7 +253,7 @@ export class FabricApiService {
         throw new Error(`Fabric API error ${response.status} on ${path.split('?')[0]}`);
       }
 
-      const data = await response.json() as FabricListResponse<T>;
+      const data = (await response.json()) as FabricListResponse<T>;
       results.push(...(data.value ?? []));
       const nextUri = data.continuationUri;
       url = nextUri && isSafeNextUrl(nextUri, BASE_URL) ? nextUri : undefined;
@@ -238,14 +266,24 @@ export class FabricApiService {
   // ─── Internal helpers — Power BI REST API ─────────────────────────────────
 
   /** Single-page request against the Power BI REST API (different base URL + scope). */
-  private async requestPbi<T>(tenantId: string, path: string, options?: { method?: string; body?: string }): Promise<T> {
+  private async requestPbi<T>(
+    tenantId: string,
+    path: string,
+    options?: { method?: string; body?: string },
+  ): Promise<T> {
     const url = `${POWERBI_BASE_URL}${path}`;
 
-    const response = await this._authedFetch(tenantId, POWERBI_SCOPE, url, `[PBI] ${path.split('?')[0]}`, {
-      method: options?.method,
-      body: options?.body,
-      json: true,
-    });
+    const response = await this._authedFetch(
+      tenantId,
+      POWERBI_SCOPE,
+      url,
+      `[PBI] ${path.split('?')[0]}`,
+      {
+        method: options?.method,
+        body: options?.body,
+        json: true,
+      },
+    );
 
     if (!response.ok) {
       throw new Error(`Power BI API error ${response.status} on ${path.split('?')[0]}`);
@@ -268,13 +306,18 @@ export class FabricApiService {
 
       // Token is re-read on each page (from cache) so a long pagination
       // sequence can't outlive it
-      const response = await this._authedFetch(tenantId, POWERBI_SCOPE, url, `[PBI] ${path.split('?')[0]}`);
+      const response = await this._authedFetch(
+        tenantId,
+        POWERBI_SCOPE,
+        url,
+        `[PBI] ${path.split('?')[0]}`,
+      );
 
       if (!response.ok) {
         throw new Error(`Power BI API error ${response.status} on ${path.split('?')[0]}`);
       }
 
-      const data = await response.json() as PbiListResponse<T>;
+      const data = (await response.json()) as PbiListResponse<T>;
       results.push(...(data.value ?? []));
       const nextLink = data['@odata.nextLink'];
       url = nextLink && isSafeNextUrl(nextLink, POWERBI_BASE_URL) ? nextLink : undefined;
@@ -288,11 +331,11 @@ export class FabricApiService {
 
   /** Maps Fabric jobs/instances items → PipelineRun[] (for data pipelines). */
   private _mapRuns(items: FabricRun[], itemId: string): PipelineRun[] {
-    const runs = items.map(r => {
+    const runs = items.map((r) => {
       const startIso = r.startTimeUtc ? asUtcIso(r.startTimeUtc) : undefined;
-      const endIso   = r.endTimeUtc   ? asUtcIso(r.endTimeUtc)   : undefined;
+      const endIso = r.endTimeUtc ? asUtcIso(r.endTimeUtc) : undefined;
       const start = startIso ? new Date(startIso).getTime() : undefined;
-      const end   = endIso   ? new Date(endIso).getTime()   : undefined;
+      const end = endIso ? new Date(endIso).getTime() : undefined;
       const durationMs = start !== undefined && end !== undefined ? end - start : undefined;
 
       return {
@@ -315,11 +358,11 @@ export class FabricApiService {
    *  Different field names: startTime/endTime (no Utc suffix),
    *  requestId (GUID), serviceExceptionJson (JSON string). */
   private _mapRefreshHistory(items: PbiRefreshItem[], modelId: string): PipelineRun[] {
-    const runs = items.map(r => {
+    const runs = items.map((r) => {
       const startIso = r.startTime ? asUtcIso(r.startTime) : undefined;
-      const endIso   = r.endTime   ? asUtcIso(r.endTime)   : undefined;
+      const endIso = r.endTime ? asUtcIso(r.endTime) : undefined;
       const start = startIso ? new Date(startIso).getTime() : undefined;
-      const end   = endIso   ? new Date(endIso).getTime()   : undefined;
+      const end = endIso ? new Date(endIso).getTime() : undefined;
       const durationMs = start !== undefined && end !== undefined ? end - start : undefined;
 
       // Parse error from serviceExceptionJson (JSON-encoded string)
@@ -357,8 +400,8 @@ export class FabricApiService {
   async getWorkspaces(tenantId: string): Promise<Workspace[]> {
     const items = await this.listAll<FabricWorkspace>(tenantId, '/workspaces');
     return items
-      .filter(w => w.type !== 'Personal')
-      .map(w => ({
+      .filter((w) => w.type !== 'Personal')
+      .map((w) => ({
         id: w.id,
         displayName: w.displayName,
         tenantId,
@@ -367,8 +410,11 @@ export class FabricApiService {
 
   async getPipelines(tenantId: string, workspaceId: string): Promise<Pipeline[]> {
     assertUuids(workspaceId);
-    const items = await this.listAll<FabricPipeline>(tenantId, `/workspaces/${workspaceId}/dataPipelines`);
-    return items.map(p => ({
+    const items = await this.listAll<FabricPipeline>(
+      tenantId,
+      `/workspaces/${workspaceId}/dataPipelines`,
+    );
+    return items.map((p) => ({
       id: p.id,
       displayName: p.displayName,
       workspaceId,
@@ -380,8 +426,11 @@ export class FabricApiService {
 
   async getSemanticModels(tenantId: string, workspaceId: string): Promise<Pipeline[]> {
     assertUuids(workspaceId);
-    const items = await this.listAll<FabricPipeline>(tenantId, `/workspaces/${workspaceId}/semanticModels`);
-    return items.map(p => ({
+    const items = await this.listAll<FabricPipeline>(
+      tenantId,
+      `/workspaces/${workspaceId}/semanticModels`,
+    );
+    return items.map((p) => ({
       id: p.id,
       displayName: p.displayName,
       workspaceId,
@@ -393,8 +442,11 @@ export class FabricApiService {
 
   async getNotebooks(tenantId: string, workspaceId: string): Promise<Pipeline[]> {
     assertUuids(workspaceId);
-    const items = await this.listAll<FabricPipeline>(tenantId, `/workspaces/${workspaceId}/notebooks`);
-    return items.map(p => ({
+    const items = await this.listAll<FabricPipeline>(
+      tenantId,
+      `/workspaces/${workspaceId}/notebooks`,
+    );
+    return items.map((p) => ({
       id: p.id,
       displayName: p.displayName,
       workspaceId,
@@ -406,8 +458,11 @@ export class FabricApiService {
 
   async getCopyJobs(tenantId: string, workspaceId: string): Promise<Pipeline[]> {
     assertUuids(workspaceId);
-    const items = await this.listAll<FabricPipeline>(tenantId, `/workspaces/${workspaceId}/copyJobs`);
-    return items.map(p => ({
+    const items = await this.listAll<FabricPipeline>(
+      tenantId,
+      `/workspaces/${workspaceId}/copyJobs`,
+    );
+    return items.map((p) => ({
       id: p.id,
       displayName: p.displayName,
       workspaceId,
@@ -421,8 +476,11 @@ export class FabricApiService {
    *  generic Items API. GET /workspaces/{wsId}/items?type=DataBuildToolJob */
   async getDbtJobs(tenantId: string, workspaceId: string): Promise<Pipeline[]> {
     assertUuids(workspaceId);
-    const items = await this.listAll<FabricPipeline>(tenantId, `/workspaces/${workspaceId}/items?type=DataBuildToolJob`);
-    return items.map(p => ({
+    const items = await this.listAll<FabricPipeline>(
+      tenantId,
+      `/workspaces/${workspaceId}/items?type=DataBuildToolJob`,
+    );
+    return items.map((p) => ({
       id: p.id,
       displayName: p.displayName,
       workspaceId,
@@ -460,13 +518,19 @@ export class FabricApiService {
   }
 
   /** Returns the new job instance ID (or 'triggered' when the API returns 202 with no body). */
-  async triggerPipeline(tenantId: string, workspaceId: string, pipelineId: string): Promise<string> {
+  async triggerPipeline(
+    tenantId: string,
+    workspaceId: string,
+    pipelineId: string,
+  ): Promise<string> {
     assertUuids(workspaceId, pipelineId);
     const path = `/workspaces/${workspaceId}/dataPipelines/${pipelineId}/jobs/instances?jobType=Pipeline`;
     const url = `${BASE_URL}${path}`;
 
     const response = await this._authedFetch(tenantId, FABRIC_SCOPE, url, path.split('?')[0], {
-      method: 'POST', body: '{}', json: true,
+      method: 'POST',
+      body: '{}',
+      json: true,
     });
 
     if (!response.ok) {
@@ -475,7 +539,7 @@ export class FabricApiService {
 
     // 202 Accepted — body may contain the job instance id or be empty
     try {
-      const body = await response.json() as { id?: string };
+      const body = (await response.json()) as { id?: string };
       return body.id ?? 'triggered';
     } catch {
       return 'triggered';
@@ -513,13 +577,19 @@ export class FabricApiService {
 
   /** Triggers an on-demand notebook run. Returns the new job instance ID
    *  (or 'triggered' when the API returns 202 with no body). */
-  async triggerNotebook(tenantId: string, workspaceId: string, notebookId: string): Promise<string> {
+  async triggerNotebook(
+    tenantId: string,
+    workspaceId: string,
+    notebookId: string,
+  ): Promise<string> {
     assertUuids(workspaceId, notebookId);
     const path = `/workspaces/${workspaceId}/items/${notebookId}/jobs/instances?jobType=RunNotebook`;
     const url = `${BASE_URL}${path}`;
 
     const response = await this._authedFetch(tenantId, FABRIC_SCOPE, url, path.split('?')[0], {
-      method: 'POST', body: '{}', json: true,
+      method: 'POST',
+      body: '{}',
+      json: true,
     });
 
     if (!response.ok) {
@@ -527,7 +597,7 @@ export class FabricApiService {
     }
 
     try {
-      const body = await response.json() as { id?: string };
+      const body = (await response.json()) as { id?: string };
       return body.id ?? 'triggered';
     } catch {
       return 'triggered';
@@ -572,7 +642,9 @@ export class FabricApiService {
     const url = `${BASE_URL}${path}`;
 
     const response = await this._authedFetch(tenantId, FABRIC_SCOPE, url, path.split('?')[0], {
-      method: 'POST', body: '{}', json: true,
+      method: 'POST',
+      body: '{}',
+      json: true,
     });
 
     if (!response.ok) {
@@ -580,7 +652,7 @@ export class FabricApiService {
     }
 
     try {
-      const body = await response.json() as { id?: string };
+      const body = (await response.json()) as { id?: string };
       return body.id ?? 'triggered';
     } catch {
       return 'triggered';
@@ -648,12 +720,19 @@ export class FabricApiService {
 
   /** Triggers a semantic model refresh via Power BI REST API.
    *  POST returns 202 Accepted. */
-  async triggerSemanticModelRefresh(tenantId: string, workspaceId: string, modelId: string): Promise<string> {
+  async triggerSemanticModelRefresh(
+    tenantId: string,
+    workspaceId: string,
+    modelId: string,
+  ): Promise<string> {
     assertUuids(workspaceId, modelId);
     const url = `${POWERBI_BASE_URL}/groups/${workspaceId}/datasets/${modelId}/refreshes`;
 
     const response = await this._authedFetch(
-      tenantId, POWERBI_SCOPE, url, '[PBI] /groups/.../datasets/.../refreshes',
+      tenantId,
+      POWERBI_SCOPE,
+      url,
+      '[PBI] /groups/.../datasets/.../refreshes',
       { method: 'POST', body: JSON.stringify({ notifyOption: 'NoNotification' }), json: true },
     );
 
@@ -663,7 +742,7 @@ export class FabricApiService {
 
     // 202 Accepted — body may contain requestId or be empty
     try {
-      const body = await response.json() as { requestId?: string };
+      const body = (await response.json()) as { requestId?: string };
       return body.requestId ?? 'triggered';
     } catch {
       return 'triggered';
@@ -698,8 +777,8 @@ export class FabricApiService {
         occurrence?: {
           occurrenceType?: string; // 'DayOfMonth' | 'OrdinalWeekday'
           dayOfMonth?: number;
-          weekIndex?: string;      // First|Second|Third|Fourth|Fifth
-          weekday?: string;        // English day name
+          weekIndex?: string; // First|Second|Third|Fourth|Fifth
+          weekday?: string; // English day name
         };
       };
     }
@@ -713,8 +792,8 @@ export class FabricApiService {
     }
 
     const defs: ScheduleDef[] = (data.value ?? [])
-      .filter(s => s.configuration?.type)
-      .map(s => ({
+      .filter((s) => s.configuration?.type)
+      .map((s) => ({
         enabled: !!s.enabled,
         type: s.configuration!.type as ScheduleDef['type'],
         interval: s.configuration!.interval,
@@ -734,19 +813,31 @@ export class FabricApiService {
 
   /** Fetches the job schedules for a data pipeline and computes the next run.
    *  Returns undefined when the pipeline has no schedule (or on a non-fatal error). */
-  async getPipelineSchedule(tenantId: string, workspaceId: string, pipelineId: string): Promise<ScheduleInfo | undefined> {
+  async getPipelineSchedule(
+    tenantId: string,
+    workspaceId: string,
+    pipelineId: string,
+  ): Promise<ScheduleInfo | undefined> {
     return this._getItemSchedule(tenantId, workspaceId, pipelineId, 'Pipeline');
   }
 
   /** Fetches the job schedules for a notebook and computes the next run.
    *  Returns undefined when the notebook has no schedule (or on a non-fatal error). */
-  async getNotebookSchedule(tenantId: string, workspaceId: string, notebookId: string): Promise<ScheduleInfo | undefined> {
+  async getNotebookSchedule(
+    tenantId: string,
+    workspaceId: string,
+    notebookId: string,
+  ): Promise<ScheduleInfo | undefined> {
     return this._getItemSchedule(tenantId, workspaceId, notebookId, 'RunNotebook');
   }
 
   /** Fetches the job schedules for a Copy Job and computes the next run.
    *  Returns undefined when the Copy Job has no schedule (or on a non-fatal error). */
-  async getCopyJobSchedule(tenantId: string, workspaceId: string, copyJobId: string): Promise<ScheduleInfo | undefined> {
+  async getCopyJobSchedule(
+    tenantId: string,
+    workspaceId: string,
+    copyJobId: string,
+  ): Promise<ScheduleInfo | undefined> {
     return this._getItemSchedule(tenantId, workspaceId, copyJobId, 'Execute');
   }
 
@@ -754,21 +845,32 @@ export class FabricApiService {
    *  dbt jobs are preview-only; the exact jobType string for schedules is
    *  unconfirmed against a live tenant — falls back to undefined (no "Next Run"
    *  shown) on error rather than throwing, same as the other schedule fetchers. */
-  async getDbtJobSchedule(tenantId: string, workspaceId: string, dbtJobId: string): Promise<ScheduleInfo | undefined> {
+  async getDbtJobSchedule(
+    tenantId: string,
+    workspaceId: string,
+    dbtJobId: string,
+  ): Promise<ScheduleInfo | undefined> {
     return this._getItemSchedule(tenantId, workspaceId, dbtJobId, 'Execute');
   }
 
   /** Fetches the Power BI refresh schedule for a semantic model and computes
    *  the next run. GET /groups/{wsId}/datasets/{modelId}/refreshSchedule
    *  Returns undefined when no schedule is configured (404) or on a non-fatal error. */
-  async getSemanticModelSchedule(tenantId: string, workspaceId: string, modelId: string): Promise<ScheduleInfo | undefined> {
+  async getSemanticModelSchedule(
+    tenantId: string,
+    workspaceId: string,
+    modelId: string,
+  ): Promise<ScheduleInfo | undefined> {
     assertUuids(workspaceId, modelId);
     const url = `${POWERBI_BASE_URL}/groups/${workspaceId}/datasets/${modelId}/refreshSchedule`;
 
     let response: import('node-fetch').Response;
     try {
       response = await this._authedFetch(
-        tenantId, POWERBI_SCOPE, url, '[PBI] /groups/.../datasets/.../refreshSchedule',
+        tenantId,
+        POWERBI_SCOPE,
+        url,
+        '[PBI] /groups/.../datasets/.../refreshSchedule',
       );
     } catch (err) {
       console.warn(`[FabricPulse] Could not fetch refresh schedule for model ${modelId}:`, err);
@@ -783,14 +885,16 @@ export class FabricApiService {
 
     let data: { days?: string[]; times?: string[]; enabled?: boolean; localTimeZoneId?: string };
     try {
-      data = await response.json() as typeof data;
+      data = (await response.json()) as typeof data;
     } catch {
       return undefined;
     }
 
     if (!data.days || data.days.length === 0) {
       // Schedule exists but has no days — surface "disabled" if explicitly off, else nothing.
-      return data.enabled === false ? { enabled: false, summary: 'Refresh schedule disabled' } : undefined;
+      return data.enabled === false
+        ? { enabled: false, summary: 'Refresh schedule disabled' }
+        : undefined;
     }
 
     const def: ScheduleDef = {
@@ -820,8 +924,11 @@ export class FabricApiService {
         };
       };
     }
-    const items = await this.listAll<FabricLakehouse>(tenantId, `/workspaces/${workspaceId}/lakehouses`);
-    return items.map(lh => ({
+    const items = await this.listAll<FabricLakehouse>(
+      tenantId,
+      `/workspaces/${workspaceId}/lakehouses`,
+    );
+    return items.map((lh) => ({
       id: lh.id,
       displayName: lh.displayName,
       description: lh.description,
@@ -830,14 +937,20 @@ export class FabricApiService {
       tenantId,
       sqlEndpointId: lh.properties?.sqlEndpointProperties?.id,
       connectionString: lh.properties?.sqlEndpointProperties?.connectionString,
-      sqlEndpointStatus: (lh.properties?.sqlEndpointProperties?.provisioningStatus as Lakehouse['sqlEndpointStatus']) ?? undefined,
+      sqlEndpointStatus:
+        (lh.properties?.sqlEndpointProperties
+          ?.provisioningStatus as Lakehouse['sqlEndpointStatus']) ?? undefined,
       isSchemaEnabled: !!lh.properties?.defaultSchema,
       defaultSchema: lh.properties?.defaultSchema,
       isFavorite: false,
     }));
   }
 
-  async getLakehouseTables(tenantId: string, workspaceId: string, lakehouseId: string): Promise<LakehouseTable[]> {
+  async getLakehouseTables(
+    tenantId: string,
+    workspaceId: string,
+    lakehouseId: string,
+  ): Promise<LakehouseTable[]> {
     assertUuids(workspaceId, lakehouseId);
     interface FabricTable {
       name: string;
@@ -867,7 +980,7 @@ export class FabricApiService {
       pages++;
     } while (continuationToken && pages < 20);
 
-    return results.map(t => ({
+    return results.map((t) => ({
       name: t.name,
       type: (t.type === 'External' ? 'External' : 'Managed') as LakehouseTable['type'],
       format: t.format,
@@ -899,11 +1012,18 @@ export class FabricApiService {
 
       if (!response.ok) {
         let detail = '';
-        try { const err = await response.json() as { error?: { message?: string } }; detail = err.error?.message ?? ''; } catch { /* ignore */ }
-        throw new Error(`OneLake API error ${response.status} listing tables${detail ? `: ${detail}` : ''}`);
+        try {
+          const err = (await response.json()) as { error?: { message?: string } };
+          detail = err.error?.message ?? '';
+        } catch {
+          /* ignore */
+        }
+        throw new Error(
+          `OneLake API error ${response.status} listing tables${detail ? `: ${detail}` : ''}`,
+        );
       }
 
-      const data = await response.json() as {
+      const data = (await response.json()) as {
         paths?: { name: string; isDirectory?: string; contentLength?: string }[];
       };
       for (const p of data.paths ?? []) {
@@ -932,12 +1052,14 @@ export class FabricApiService {
     const baseName = (p: string) => p.split('/').filter(Boolean).pop() ?? p;
 
     const schemaDirs = await this.listOneLakePaths(tenantId, workspaceId, `${lakehouseId}/Tables`);
-    const schemas = schemaDirs.filter(d => d.isDirectory).map(d => baseName(d.name));
+    const schemas = schemaDirs.filter((d) => d.isDirectory).map((d) => baseName(d.name));
 
     const tables: LakehouseTable[] = [];
     for (const schema of schemas) {
       const tableDirs = await this.listOneLakePaths(
-        tenantId, workspaceId, `${lakehouseId}/Tables/${encodeURIComponent(schema)}`,
+        tenantId,
+        workspaceId,
+        `${lakehouseId}/Tables/${encodeURIComponent(schema)}`,
       );
       for (const d of tableDirs) {
         if (!d.isDirectory) continue;
@@ -951,8 +1073,9 @@ export class FabricApiService {
       }
     }
 
-    tables.sort((a, b) =>
-      (a.schema ?? '').localeCompare(b.schema ?? '') || a.name.localeCompare(b.name));
+    tables.sort(
+      (a, b) => (a.schema ?? '').localeCompare(b.schema ?? '') || a.name.localeCompare(b.name),
+    );
     return tables;
   }
 
@@ -1033,13 +1156,22 @@ export class FabricApiService {
     const body = JSON.stringify({ executionData });
 
     const response = await this._authedFetch(tenantId, FABRIC_SCOPE, url, path, {
-      method: 'POST', body, json: true,
+      method: 'POST',
+      body,
+      json: true,
     });
 
     if (!response.ok) {
       let detail = '';
-      try { const err = await response.json() as { message?: string; errorCode?: string }; detail = err.message ?? err.errorCode ?? ''; } catch { /* ignore */ }
-      throw new Error(`Fabric API error ${response.status} on table maintenance for "${tableName}"${detail ? `: ${detail}` : ''}`);
+      try {
+        const err = (await response.json()) as { message?: string; errorCode?: string };
+        detail = err.message ?? err.errorCode ?? '';
+      } catch {
+        /* ignore */
+      }
+      throw new Error(
+        `Fabric API error ${response.status} on table maintenance for "${tableName}"${detail ? `: ${detail}` : ''}`,
+      );
     }
 
     // 202 Accepted — Location header contains the polling URL
@@ -1052,7 +1184,9 @@ export class FabricApiService {
         const result = JSON.parse(text) as { id?: string };
         jobInstanceId = result.id;
       }
-    } catch { /* 202 may have empty body */ }
+    } catch {
+      /* 202 may have empty body */
+    }
 
     // Fall back to the jobInstanceId embedded in the Location URL
     if (!jobInstanceId && locationUrl) {
@@ -1070,7 +1204,12 @@ export class FabricApiService {
     workspaceId: string,
     itemId: string,
     jobInstanceId: string,
-  ): Promise<{ status: string; startTimeUtc?: string; endTimeUtc?: string; failureReason?: string }> {
+  ): Promise<{
+    status: string;
+    startTimeUtc?: string;
+    endTimeUtc?: string;
+    failureReason?: string;
+  }> {
     assertUuids(workspaceId, itemId, jobInstanceId);
     const path = `/workspaces/${workspaceId}/items/${itemId}/jobs/instances/${jobInstanceId}`;
     const data = await this.request<{
@@ -1093,18 +1232,24 @@ export class FabricApiService {
   private normalizeStatus(raw: string): RunStatus {
     switch (raw?.toLowerCase()) {
       case 'succeeded':
-      case 'completed':   return 'Succeeded';
-      case 'failed':      return 'Failed';
+      case 'completed':
+        return 'Succeeded';
+      case 'failed':
+        return 'Failed';
       case 'inprogress':
       case 'in_progress':
       case 'running':
-      case 'unknown':     return 'InProgress';   // PBI uses "Unknown" for in-progress refreshes
+      case 'unknown':
+        return 'InProgress'; // PBI uses "Unknown" for in-progress refreshes
       case 'cancelled':
       case 'canceled':
-      case 'disabled':    return 'Cancelled';    // PBI uses "Disabled" for disabled refresh schedules
+      case 'disabled':
+        return 'Cancelled'; // PBI uses "Disabled" for disabled refresh schedules
       case 'queued':
-      case 'dequeued':    return 'Queued';
-      default:            return 'NotStarted';
+      case 'dequeued':
+        return 'Queued';
+      default:
+        return 'NotStarted';
     }
   }
 }

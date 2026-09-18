@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { AzureCliCredential, InteractiveBrowserCredential, TokenCredential } from '@azure/identity';
 
-export const FABRIC_SCOPE  = 'https://api.fabric.microsoft.com/.default';
+export const FABRIC_SCOPE = 'https://api.fabric.microsoft.com/.default';
 export const POWERBI_SCOPE = 'https://analysis.windows.net/powerbi/api/.default';
 /** OneLake DFS (ADLS Gen2) requires a token in the Storage audience. */
 export const ONELAKE_SCOPE = 'https://storage.azure.com/.default';
@@ -10,7 +10,10 @@ export const ONELAKE_SCOPE = 'https://storage.azure.com/.default';
  *  MSAL writes this verbatim as the response body; browsers content-sniff the
  *  leading <!DOCTYPE html> and render it. */
 function authResultPage(opts: {
-  accent: string; glyph: string; title: string; message: string;
+  accent: string;
+  glyph: string;
+  title: string;
+  message: string;
 }): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -144,7 +147,9 @@ export class AuthService {
     // The stored copy outlives callers that time out, so swallow its rejection
     // here — the caller below still receives it through the race.
     void acquisition
-      .catch(() => { /* surfaced to the awaiting caller */ })
+      .catch(() => {
+        /* surfaced to the awaiting caller */
+      })
       .then(() => {
         if (this.inflight.get(cacheKey) === acquisition) {
           this.inflight.delete(cacheKey);
@@ -161,16 +166,26 @@ export class AuthService {
     let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
 
     const timeout = new Promise<never>((_, reject) => {
-      timeoutTimer = setTimeout(() => reject(new AuthTimeoutError(
-        `Sign-in for tenant ${tenantId} did not complete within ${Math.round(ACQUIRE_TIMEOUT_MS / 1000)}s`,
-      )), ACQUIRE_TIMEOUT_MS);
+      timeoutTimer = setTimeout(
+        () =>
+          reject(
+            new AuthTimeoutError(
+              `Sign-in for tenant ${tenantId} did not complete within ${Math.round(ACQUIRE_TIMEOUT_MS / 1000)}s`,
+            ),
+          ),
+        ACQUIRE_TIMEOUT_MS,
+      );
     });
 
-    const hintTimer = setTimeout(() => this._emit({
-      tenantId,
-      phase: 'pending',
-      message: 'Waiting for the Microsoft sign-in to complete in your browser.',
-    }), INTERACTIVE_HINT_MS);
+    const hintTimer = setTimeout(
+      () =>
+        this._emit({
+          tenantId,
+          phase: 'pending',
+          message: 'Waiting for the Microsoft sign-in to complete in your browser.',
+        }),
+      INTERACTIVE_HINT_MS,
+    );
 
     try {
       const token = await Promise.race([acquisition, timeout]);
@@ -204,7 +219,9 @@ export class AuthService {
       // itself from here. Drop it and fall back to the interactive flow rather
       // than failing every refresh until the user runs `az login` again.
       if (!this.cliCredentials.has(tenantId)) throw err;
-      console.warn(`[FabricPulse] Azure CLI credential no longer valid for tenant ${tenantId} — falling back to browser sign-in`);
+      console.warn(
+        `[FabricPulse] Azure CLI credential no longer valid for tenant ${tenantId} — falling back to browser sign-in`,
+      );
       this.credentials.delete(tenantId);
       this.cliCredentials.delete(tenantId);
       credential = await this.getCredential(tenantId);

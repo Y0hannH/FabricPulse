@@ -4,9 +4,9 @@ export type NotificationLevel = 'info' | 'success' | 'warning' | 'error';
 
 export interface NotificationEntry {
   id: number;
-  at: string;       // ISO-8601
+  at: string; // ISO-8601
   level: NotificationLevel;
-  source: string;   // 'Dashboard' | 'Lakehouses' | 'History' | 'Alerts' | 'Auth' | 'Storage'
+  source: string; // 'Dashboard' | 'Lakehouses' | 'History' | 'Alerts' | 'Auth' | 'Storage'
   message: string;
 }
 
@@ -50,7 +50,13 @@ export class NotificationLog implements vscode.Disposable {
   add(level: NotificationLevel, source: string, message: string): void {
     const text = message.trim();
     if (!text) return;
-    this._entries.unshift({ id: this._nextId++, at: new Date().toISOString(), level, source, message: text });
+    this._entries.unshift({
+      id: this._nextId++,
+      at: new Date().toISOString(),
+      level,
+      source,
+      message: text,
+    });
     if (this._entries.length > MAX_ENTRIES) this._entries.length = MAX_ENTRIES;
     this._unread++;
     this._schedulePersist();

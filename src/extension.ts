@@ -31,11 +31,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('fabricPulse.showNotifications', () =>
       vscode.commands.executeCommand(`${NotificationsView.VIEW_ID}.focus`),
     ),
-    vscode.commands.registerCommand('fabricPulse.clearNotifications', () => notificationLog.clear()),
-    vscode.commands.registerCommand('fabricPulse.copyNotification', async (entry?: NotificationEntry) => {
-      if (!entry) return;
-      await vscode.env.clipboard.writeText(NotificationsView.formatForClipboard(entry));
-    }),
+    vscode.commands.registerCommand('fabricPulse.clearNotifications', () =>
+      notificationLog.clear(),
+    ),
+    vscode.commands.registerCommand(
+      'fabricPulse.copyNotification',
+      async (entry?: NotificationEntry) => {
+        if (!entry) return;
+        await vscode.env.clipboard.writeText(NotificationsView.formatForClipboard(entry));
+      },
+    ),
   );
 
   const authService = new AuthService();
@@ -62,11 +67,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // ── Register commands ─────────────────────────────────────────────────────
 
   context.subscriptions.push(
-
     // fabricPulse.openDashboard ─────────────────────────────────────────────
     vscode.commands.registerCommand('fabricPulse.openDashboard', () => {
       DashboardPanel.createOrShow(
-        context.extensionUri, fabricApi, _storage, _alertService, context, notificationLog,
+        context.extensionUri,
+        fabricApi,
+        _storage,
+        _alertService,
+        context,
+        notificationLog,
       );
       startPolling();
     }),
@@ -74,7 +83,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // fabricPulse.openLakehouses ────────────────────────────────────────────
     vscode.commands.registerCommand('fabricPulse.openLakehouses', () => {
       LakehousePanel.createOrShow(
-        context.extensionUri, fabricApi, _storage, context, notificationLog,
+        context.extensionUri,
+        fabricApi,
+        _storage,
+        context,
+        notificationLog,
       );
     }),
 
@@ -89,7 +102,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         title: 'FabricPulse — Add Tenant',
         prompt: 'Enter a display name for this tenant',
         placeHolder: 'e.g. Production, Client A, Dev...',
-        validateInput: v => v.trim().length > 0 ? null : 'Name cannot be empty',
+        validateInput: (v) => (v.trim().length > 0 ? null : 'Name cannot be empty'),
       });
       if (!name) return;
 
@@ -97,7 +110,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         title: 'FabricPulse — Add Tenant',
         prompt: 'Enter the Azure Tenant ID (GUID)',
         placeHolder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
-        validateInput: v =>
+        validateInput: (v) =>
           /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim())
             ? null
             : 'Invalid Tenant ID — must be a UUID (e.g. 6ba7b810-9dad-11d1-80b4-00c04fd430c8)',
@@ -107,12 +120,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const existing = context.globalState.get<Tenant[]>('fabricPulse.tenants', []);
 
       // Avoid duplicates
-      if (existing.some(t => t.tenantId.toLowerCase() === tenantId.trim().toLowerCase())) {
+      if (existing.some((t) => t.tenantId.toLowerCase() === tenantId.trim().toLowerCase())) {
         vscode.window.showWarningMessage(`Tenant "${name}" is already configured.`);
         return;
       }
 
-      const newTenant: Tenant = { id: tenantId.trim(), name: name.trim(), tenantId: tenantId.trim() };
+      const newTenant: Tenant = {
+        id: tenantId.trim(),
+        name: name.trim(),
+        tenantId: tenantId.trim(),
+      };
       existing.push(newTenant);
       await context.globalState.update('fabricPulse.tenants', existing);
 
@@ -165,20 +182,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const lastRun = _storage.getLastRun(pipelineId);
       if (lastRun) {
         const { HistoryPanel: HP } = await import('./panels/HistoryPanel');
-        HP.createOrShow(context.extensionUri, {
-          id: pipelineId,
-          displayName: lastRun.pipelineName,
-          workspaceId: lastRun.workspaceId,
-          workspaceName: lastRun.workspaceName,
-          tenantId: lastRun.tenantId,
-          itemType: (lastRun.itemType as import('./models/types').ItemType) ?? 'pipeline',
-        }, _storage, notificationLog);
+        HP.createOrShow(
+          context.extensionUri,
+          {
+            id: pipelineId,
+            displayName: lastRun.pipelineName,
+            workspaceId: lastRun.workspaceId,
+            workspaceName: lastRun.workspaceName,
+            tenantId: lastRun.tenantId,
+            itemType: (lastRun.itemType as import('./models/types').ItemType) ?? 'pipeline',
+          },
+          _storage,
+          notificationLog,
+        );
       } else if (DashboardPanel.currentPanel) {
         // Fallback: refresh the dashboard if we can't find the pipeline in storage
         await DashboardPanel.currentPanel.refresh();
       }
     }),
-
   );
 
   // ── Cleanup on deactivation ────────────────────────────────────────────────
