@@ -1,9 +1,10 @@
-# Source files (bundled by esbuild)
-src/**/*.ts
-src/models/**
-src/panels/**
-src/services/**
+# Sources (bundled by esbuild into dist/) — sauf src/webview, lu sur disque au
+# runtime par les panels (voir DashboardPanel._getHtml) et donc embarqué tel quel.
+src/**
 !src/webview/**
+
+# Stale output from the pre-phase-1 layout — never ship it
+out/**
 
 # Config & dev files
 .vscode/**
@@ -13,6 +14,10 @@ src/services/**
 tsconfig.json
 esbuild.js
 eslint.config.js
+.prettierrc.json
+.prettierignore
+.editorconfig
+CLAUDE.md
 
 # Dependencies (bundled by esbuild)
 node_modules/**

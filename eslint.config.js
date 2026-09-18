@@ -1,3 +1,6 @@
+// Diverge volontairement de la config commune Pulse Suite (voir HARMONISATION.md) :
+// ce fichier inclut eslint:recommended, que la config commune n'a pas encore.
+// À converger en phase 1b, en généralisant eslint:recommended aux quatre repos.
 // Flat config — ESLint 9 dropped eslintrc support, so the old .eslintrc.json
 // stopped being read and `npm run lint` failed outright ("couldn't find
 // eslint.config.js") from the ESLint 10 upgrade onwards. Rule set below is a
@@ -9,7 +12,7 @@ const tsParser = require('@typescript-eslint/parser');
 module.exports = [
   // Was `ignorePatterns`. src/webview is plain browser JS (its own globals and
   // conventions) and is deliberately left unlinted.
-  { ignores: ['out/**', 'node_modules/**', 'src/webview/**'] },
+  { ignores: ['dist/**', 'out/**', 'node_modules/**', 'src/webview/**'] },
 
   {
     // Scoped to .ts so neither the TS parser nor the TS rules reach esbuild.js

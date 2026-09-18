@@ -44,7 +44,7 @@ export class StorageService {
 
     try {
       // The WASM binary is copied to the same directory as the bundled extension
-      // by the esbuild build script. __dirname points to out/ at runtime.
+      // by the esbuild build script. __dirname points to dist/ at runtime.
       this._SQL = await initSqlJs({
         locateFile: (file: string) => path.join(__dirname, file),
       });
