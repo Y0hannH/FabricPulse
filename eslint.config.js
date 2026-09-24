@@ -62,7 +62,10 @@ module.exports = [
         {
           selector: ['classProperty', 'classMethod', 'accessor', 'parameterProperty'],
           modifiers: ['private'],
-          format: ['camelCase'],
+          // UPPER_CASE stays allowed: this only bans the leading underscore, it
+          // isn't meant to relitigate the separate convention for constants
+          // (private static readonly VIEW_TYPE and friends).
+          format: ['camelCase', 'UPPER_CASE'],
           leadingUnderscore: 'forbid',
         },
       ],
