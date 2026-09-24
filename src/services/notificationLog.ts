@@ -24,27 +24,23 @@ const PERSIST_DEBOUNCE_MS = 1_000;
  *  can be reviewed from the sidebar. Persisted (capped) so a restart doesn't
  *  lose them; the unread count is per session. */
 export class NotificationLog implements vscode.Disposable {
-  /** Newest first. Keeps the `_` prefix because the public `entries` getter
-   *  already owns that name. */
-  // eslint-disable-next-line @typescript-eslint/naming-convention
-  private _entries: NotificationEntry[];
+  /** Newest first. Named `entryList` rather than `entries`, which the public getter owns. */
+  private entryList: NotificationEntry[];
   private nextId: number;
   private unread = 0;
   private persistTimer: ReturnType<typeof setTimeout> | undefined;
 
-  // Same exemption as `_entries`: the public `onDidChange` Event owns that name.
-  // eslint-disable-next-line @typescript-eslint/naming-convention
-  private readonly _onDidChange = new vscode.EventEmitter<void>();
-  readonly onDidChange = this._onDidChange.event;
+  private readonly changeEmitter = new vscode.EventEmitter<void>();
+  readonly onDidChange = this.changeEmitter.event;
 
   constructor(private readonly state: vscode.Memento) {
     const saved = state.get<NotificationEntry[]>(STATE_KEY, []);
-    this._entries = Array.isArray(saved) ? saved.slice(0, MAX_ENTRIES) : [];
-    this.nextId = this._entries.reduce((max, e) => Math.max(max, e.id), 0) + 1;
+    this.entryList = Array.isArray(saved) ? saved.slice(0, MAX_ENTRIES) : [];
+    this.nextId = this.entryList.reduce((max, e) => Math.max(max, e.id), 0) + 1;
   }
 
   get entries(): readonly NotificationEntry[] {
-    return this._entries;
+    return this.entryList;
   }
 
   get unreadCount(): number {
@@ -54,30 +50,30 @@ export class NotificationLog implements vscode.Disposable {
   add(level: NotificationLevel, source: string, message: string): void {
     const text = message.trim();
     if (!text) return;
-    this._entries.unshift({
+    this.entryList.unshift({
       id: this.nextId++,
       at: new Date().toISOString(),
       level,
       source,
       message: text,
     });
-    if (this._entries.length > MAX_ENTRIES) this._entries.length = MAX_ENTRIES;
+    if (this.entryList.length > MAX_ENTRIES) this.entryList.length = MAX_ENTRIES;
     this.unread++;
     this.schedulePersist();
-    this._onDidChange.fire();
+    this.changeEmitter.fire();
   }
 
   markAllRead(): void {
     if (this.unread === 0) return;
     this.unread = 0;
-    this._onDidChange.fire();
+    this.changeEmitter.fire();
   }
 
   clear(): void {
-    this._entries = [];
+    this.entryList = [];
     this.unread = 0;
     this.schedulePersist();
-    this._onDidChange.fire();
+    this.changeEmitter.fire();
   }
 
   private schedulePersist(): void {
@@ -87,7 +83,7 @@ export class NotificationLog implements vscode.Disposable {
 
   private persistNow(): void {
     this.persistTimer = undefined;
-    void this.state.update(STATE_KEY, this._entries);
+    void this.state.update(STATE_KEY, this.entryList);
   }
 
   dispose(): void {
@@ -96,6 +92,6 @@ export class NotificationLog implements vscode.Disposable {
       clearTimeout(this.persistTimer);
       this.persistNow();
     }
-    this._onDidChange.dispose();
+    this.changeEmitter.dispose();
   }
 }

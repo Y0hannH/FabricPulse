@@ -32,11 +32,8 @@ export class NotificationsView
 {
   static readonly VIEW_ID = 'fabricpulse.notificationsView';
 
-  // Keeps the `_` prefix: the public `onDidChangeTreeData` name is fixed by
-  // vscode.TreeDataProvider.
-  // eslint-disable-next-line @typescript-eslint/naming-convention
-  private readonly _onDidChangeTreeData = new vscode.EventEmitter<void>();
-  readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+  private readonly treeDataEmitter = new vscode.EventEmitter<void>();
+  readonly onDidChangeTreeData = this.treeDataEmitter.event;
 
   private readonly view: vscode.TreeView<NotificationEntry>;
   private readonly disposables: vscode.Disposable[] = [];
@@ -47,9 +44,9 @@ export class NotificationsView
     });
     this.disposables.push(
       this.view,
-      this._onDidChangeTreeData,
+      this.treeDataEmitter,
       log.onDidChange(() => {
-        this._onDidChangeTreeData.fire();
+        this.treeDataEmitter.fire();
         this.syncBadge();
       }),
       // Opening the view is what "reading" them means.

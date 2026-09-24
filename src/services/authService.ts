@@ -122,14 +122,10 @@ export class AuthService {
    *  expired CLI session can be swapped for the interactive flow. */
   private cliCredentials = new Set<string>();
 
-  // Keeps the `_` prefix so the private EventEmitter doesn't collide with the
-  // public `onDidChangeAuthState` Event it backs — the one case where the
-  // prefix isn't redundant.
-  // eslint-disable-next-line @typescript-eslint/naming-convention
-  private readonly _onDidChangeAuthState = new vscode.EventEmitter<AuthState>();
+  private readonly authStateEmitter = new vscode.EventEmitter<AuthState>();
   /** Fires as an acquisition becomes interactive ('pending'), succeeds ('idle')
    *  or gives up ('failed'). The dashboard turns this into a re-auth banner. */
-  readonly onDidChangeAuthState = this._onDidChangeAuthState.event;
+  readonly onDidChangeAuthState = this.authStateEmitter.event;
 
   async getToken(tenantId: string, scope = FABRIC_SCOPE): Promise<string> {
     const cacheKey = `${tenantId}:${scope}`;
@@ -210,7 +206,7 @@ export class AuthService {
   }
 
   private emit(state: AuthState): void {
-    this._onDidChangeAuthState.fire(state);
+    this.authStateEmitter.fire(state);
   }
 
   private async acquireToken(tenantId: string, scope: string, cacheKey: string): Promise<string> {
@@ -323,6 +319,6 @@ export class AuthService {
   }
 
   dispose(): void {
-    this._onDidChangeAuthState.dispose();
+    this.authStateEmitter.dispose();
   }
 }
