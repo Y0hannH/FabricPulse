@@ -15,14 +15,14 @@ export class DocumentationPanel {
   public static currentPanel: DocumentationPanel | undefined;
   private static readonly VIEW_TYPE = 'fabricPulseDocumentation';
 
-  private readonly _panel: vscode.WebviewPanel;
-  private readonly _disposables: vscode.Disposable[] = [];
+  private readonly panel: vscode.WebviewPanel;
+  private readonly disposables: vscode.Disposable[] = [];
 
   public static createOrShow(extensionUri: vscode.Uri): DocumentationPanel {
     const column = vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One;
 
     if (DocumentationPanel.currentPanel) {
-      DocumentationPanel.currentPanel._panel.reveal(column);
+      DocumentationPanel.currentPanel.panel.reveal(column);
       return DocumentationPanel.currentPanel;
     }
 
@@ -42,14 +42,14 @@ export class DocumentationPanel {
   }
 
   private constructor(panel: vscode.WebviewPanel) {
-    this._panel = panel;
-    this._panel.webview.html = this._buildHtml();
-    this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+    this.panel = panel;
+    this.panel.webview.html = this.buildHtml();
+    this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
   }
 
   // ─── HTML ──────────────────────────────────────────────────────────────────
 
-  private _buildHtml(): string {
+  private buildHtml(): string {
     const nonce = getNonce();
     return `<!DOCTYPE html>
 <html lang="en">
@@ -379,8 +379,8 @@ export class DocumentationPanel {
 
   public dispose(): void {
     DocumentationPanel.currentPanel = undefined;
-    this._panel.dispose();
-    this._disposables.forEach((d) => d.dispose());
-    this._disposables.length = 0;
+    this.panel.dispose();
+    this.disposables.forEach((d) => d.dispose());
+    this.disposables.length = 0;
   }
 }

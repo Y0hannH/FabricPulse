@@ -24,19 +24,23 @@ const PERSIST_DEBOUNCE_MS = 1_000;
  *  can be reviewed from the sidebar. Persisted (capped) so a restart doesn't
  *  lose them; the unread count is per session. */
 export class NotificationLog implements vscode.Disposable {
-  /** Newest first. */
+  /** Newest first. Keeps the `_` prefix because the public `entries` getter
+   *  already owns that name. */
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private _entries: NotificationEntry[];
-  private _nextId: number;
-  private _unread = 0;
-  private _persistTimer: ReturnType<typeof setTimeout> | undefined;
+  private nextId: number;
+  private unread = 0;
+  private persistTimer: ReturnType<typeof setTimeout> | undefined;
 
+  // Same exemption as `_entries`: the public `onDidChange` Event owns that name.
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private readonly _onDidChange = new vscode.EventEmitter<void>();
   readonly onDidChange = this._onDidChange.event;
 
-  constructor(private readonly _state: vscode.Memento) {
-    const saved = _state.get<NotificationEntry[]>(STATE_KEY, []);
+  constructor(private readonly state: vscode.Memento) {
+    const saved = state.get<NotificationEntry[]>(STATE_KEY, []);
     this._entries = Array.isArray(saved) ? saved.slice(0, MAX_ENTRIES) : [];
-    this._nextId = this._entries.reduce((max, e) => Math.max(max, e.id), 0) + 1;
+    this.nextId = this._entries.reduce((max, e) => Math.max(max, e.id), 0) + 1;
   }
 
   get entries(): readonly NotificationEntry[] {
@@ -44,53 +48,53 @@ export class NotificationLog implements vscode.Disposable {
   }
 
   get unreadCount(): number {
-    return this._unread;
+    return this.unread;
   }
 
   add(level: NotificationLevel, source: string, message: string): void {
     const text = message.trim();
     if (!text) return;
     this._entries.unshift({
-      id: this._nextId++,
+      id: this.nextId++,
       at: new Date().toISOString(),
       level,
       source,
       message: text,
     });
     if (this._entries.length > MAX_ENTRIES) this._entries.length = MAX_ENTRIES;
-    this._unread++;
-    this._schedulePersist();
+    this.unread++;
+    this.schedulePersist();
     this._onDidChange.fire();
   }
 
   markAllRead(): void {
-    if (this._unread === 0) return;
-    this._unread = 0;
+    if (this.unread === 0) return;
+    this.unread = 0;
     this._onDidChange.fire();
   }
 
   clear(): void {
     this._entries = [];
-    this._unread = 0;
-    this._schedulePersist();
+    this.unread = 0;
+    this.schedulePersist();
     this._onDidChange.fire();
   }
 
-  private _schedulePersist(): void {
-    if (this._persistTimer) clearTimeout(this._persistTimer);
-    this._persistTimer = setTimeout(() => this._persistNow(), PERSIST_DEBOUNCE_MS);
+  private schedulePersist(): void {
+    if (this.persistTimer) clearTimeout(this.persistTimer);
+    this.persistTimer = setTimeout(() => this.persistNow(), PERSIST_DEBOUNCE_MS);
   }
 
-  private _persistNow(): void {
-    this._persistTimer = undefined;
-    void this._state.update(STATE_KEY, this._entries);
+  private persistNow(): void {
+    this.persistTimer = undefined;
+    void this.state.update(STATE_KEY, this._entries);
   }
 
   dispose(): void {
     // Flush a pending write so the last burst before shutdown isn't lost.
-    if (this._persistTimer) {
-      clearTimeout(this._persistTimer);
-      this._persistNow();
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistNow();
     }
     this._onDidChange.dispose();
   }

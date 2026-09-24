@@ -15,12 +15,12 @@ function getNonce(): string {
 type Period = '7d' | '30d' | '90d' | 'all';
 
 export class HistoryPanel {
-  private static readonly _panels = new Map<string, HistoryPanel>();
+  private static readonly panels = new Map<string, HistoryPanel>();
   private static readonly VIEW_TYPE = 'fabricPulseHistory';
 
-  private readonly _panel: vscode.WebviewPanel;
-  private readonly _disposables: vscode.Disposable[] = [];
-  private _period: Period = '30d';
+  private readonly panel: vscode.WebviewPanel;
+  private readonly disposables: vscode.Disposable[] = [];
+  private period: Period = '30d';
 
   // ─── Factory ────────────────────────────────────────────────────────────────
 
@@ -30,9 +30,9 @@ export class HistoryPanel {
     storage: StorageService,
     notifications: NotificationLog,
   ): void {
-    const existing = HistoryPanel._panels.get(pipeline.id);
+    const existing = HistoryPanel.panels.get(pipeline.id);
     if (existing) {
-      existing._panel.reveal(vscode.ViewColumn.Beside);
+      existing.panel.reveal(vscode.ViewColumn.Beside);
       return;
     }
 
@@ -55,35 +55,35 @@ export class HistoryPanel {
 
   private constructor(
     panel: vscode.WebviewPanel,
-    private readonly _extensionUri: vscode.Uri,
-    private readonly _pipeline: Pipeline,
-    private readonly _storage: StorageService,
-    private readonly _notifications: NotificationLog,
+    private readonly extensionUri: vscode.Uri,
+    private readonly pipeline: Pipeline,
+    private readonly storage: StorageService,
+    private readonly notifications: NotificationLog,
   ) {
-    this._panel = panel;
-    HistoryPanel._panels.set(_pipeline.id, this);
+    this.panel = panel;
+    HistoryPanel.panels.set(pipeline.id, this);
 
-    this._panel.webview.html = this._buildHtml();
+    this.panel.webview.html = this.buildHtml();
 
-    this._panel.webview.onDidReceiveMessage(
-      (msg: HistoryToExtMsg) => this._handleMessage(msg),
+    this.panel.webview.onDidReceiveMessage(
+      (msg: HistoryToExtMsg) => this.handleMessage(msg),
       null,
-      this._disposables,
+      this.disposables,
     );
 
-    this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+    this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
   }
 
   // ─── Data ────────────────────────────────────────────────────────────────────
 
-  private _sendData(): void {
-    const since = this._getSince();
-    const days = this._getDays();
+  private sendData(): void {
+    const since = this.getSince();
+    const days = this.getDays();
 
-    const runs = this._storage.getRuns(this._pipeline.id, since);
-    const annotations = this._storage.getAnnotations(this._pipeline.id);
-    const { rate, total } = this._storage.getSuccessRate(this._pipeline.id, days || 3650);
-    const patterns = this._storage.detectPatterns(this._pipeline.id, days || 90);
+    const runs = this.storage.getRuns(this.pipeline.id, since);
+    const annotations = this.storage.getAnnotations(this.pipeline.id);
+    const { rate, total } = this.storage.getSuccessRate(this.pipeline.id, days || 3650);
+    const patterns = this.storage.detectPatterns(this.pipeline.id, days || 90);
 
     const lastCachedAt = runs.reduce<string | undefined>((max, r) => {
       if (!r.createdAt) return max;
@@ -91,27 +91,27 @@ export class HistoryPanel {
     }, undefined);
 
     const data: HistoryData = {
-      pipeline: this._pipeline,
+      pipeline: this.pipeline,
       runs,
       annotations,
-      period: this._period,
+      period: this.period,
       successRate: rate,
       totalRuns: total,
       patterns,
       lastCachedAt,
     };
 
-    this._post({ type: 'historyData', data });
+    this.post({ type: 'historyData', data });
   }
 
-  private _getSince(): string | undefined {
-    const days = this._getDays();
+  private getSince(): string | undefined {
+    const days = this.getDays();
     if (days === 0) return undefined;
     return new Date(Date.now() - days * 86_400_000).toISOString();
   }
 
-  private _getDays(): number {
-    switch (this._period) {
+  private getDays(): number {
+    switch (this.period) {
       case '7d':
         return 7;
       case '30d':
@@ -129,10 +129,10 @@ export class HistoryPanel {
   private static readonly DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
   private static readonly MAX_NOTE_LENGTH = 500;
 
-  private async _handleMessage(msg: HistoryToExtMsg): Promise<void> {
+  private async handleMessage(msg: HistoryToExtMsg): Promise<void> {
     switch (msg.type) {
       case 'ready':
-        this._sendData();
+        this.sendData();
         break;
 
       case 'setPeriod':
@@ -140,8 +140,8 @@ export class HistoryPanel {
           console.warn(`[FabricPulse] Invalid period: ${msg.period}`);
           break;
         }
-        this._period = msg.period;
-        this._sendData();
+        this.period = msg.period;
+        this.sendData();
         break;
 
       case 'addAnnotation':
@@ -157,38 +157,38 @@ export class HistoryPanel {
           console.warn('[FabricPulse] Invalid annotation note');
           break;
         }
-        this._storage.addAnnotation({
-          pipelineId: this._pipeline.id,
+        this.storage.addAnnotation({
+          pipelineId: this.pipeline.id,
           date: msg.date,
           note: msg.note,
         });
-        this._sendData();
+        this.sendData();
         break;
 
       case 'exportCsv': {
-        const since = this._getSince();
-        const csv = this._storage.exportRunsCsv(this._pipeline.id, since);
+        const since = this.getSince();
+        const csv = this.storage.exportRunsCsv(this.pipeline.id, since);
         const uri = await vscode.window.showSaveDialog({
-          defaultUri: vscode.Uri.file(`${this._pipeline.displayName}_history.csv`),
+          defaultUri: vscode.Uri.file(`${this.pipeline.displayName}_history.csv`),
           filters: { 'CSV Files': ['csv'] },
         });
         if (uri) {
           fs.writeFileSync(uri.fsPath, csv, 'utf-8');
-          this._post({ type: 'toast', message: 'CSV exported', level: 'success', log: false });
+          this.post({ type: 'toast', message: 'CSV exported', level: 'success', log: false });
         }
         break;
       }
 
       case 'exportJson': {
-        const since = this._getSince();
-        const json = this._storage.exportRunsJson(this._pipeline.id, since);
+        const since = this.getSince();
+        const json = this.storage.exportRunsJson(this.pipeline.id, since);
         const uri = await vscode.window.showSaveDialog({
-          defaultUri: vscode.Uri.file(`${this._pipeline.displayName}_history.json`),
+          defaultUri: vscode.Uri.file(`${this.pipeline.displayName}_history.json`),
           filters: { 'JSON Files': ['json'] },
         });
         if (uri) {
           fs.writeFileSync(uri.fsPath, json, 'utf-8');
-          this._post({ type: 'toast', message: 'JSON exported', level: 'success', log: false });
+          this.post({ type: 'toast', message: 'JSON exported', level: 'success', log: false });
         }
         break;
       }
@@ -197,24 +197,24 @@ export class HistoryPanel {
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-  private _post(msg: ExtToHistoryMsg): void {
+  private post(msg: ExtToHistoryMsg): void {
     // Toasts fade out after a few seconds, so each one is also recorded.
     // Info toasts are progress chatter ("Loading history…") and aren't kept.
     if (msg.type === 'toast' && msg.level !== 'info' && msg.log !== false) {
-      this._notifications.add(msg.level, 'History', msg.message);
+      this.notifications.add(msg.level, 'History', msg.message);
     }
-    this._panel.webview.postMessage(msg);
+    this.panel.webview.postMessage(msg);
   }
 
-  private _buildHtml(): string {
-    const webviewDir = vscode.Uri.joinPath(this._extensionUri, 'src', 'webview');
+  private buildHtml(): string {
+    const webviewDir = vscode.Uri.joinPath(this.extensionUri, 'src', 'webview');
     const htmlPath = path.join(webviewDir.fsPath, 'history.html');
     let html = fs.readFileSync(htmlPath, 'utf-8');
 
-    const cssUri = this._panel.webview.asWebviewUri(
+    const cssUri = this.panel.webview.asWebviewUri(
       vscode.Uri.joinPath(webviewDir, 'dashboard.css'),
     );
-    const jsUri = this._panel.webview.asWebviewUri(vscode.Uri.joinPath(webviewDir, 'history.js'));
+    const jsUri = this.panel.webview.asWebviewUri(vscode.Uri.joinPath(webviewDir, 'history.js'));
     const nonce = getNonce();
 
     const v = Date.now();
@@ -222,15 +222,15 @@ export class HistoryPanel {
       .replace(/\{\{CSS_URI\}\}/g, cssUri.toString() + '?v=' + v)
       .replace(/\{\{JS_URI\}\}/g, jsUri.toString() + '?v=' + v)
       .replace(/\{\{NONCE\}\}/g, nonce)
-      .replace(/\{\{WEBVIEW_CSP_SOURCE\}\}/g, this._panel.webview.cspSource);
+      .replace(/\{\{WEBVIEW_CSP_SOURCE\}\}/g, this.panel.webview.cspSource);
 
     return html;
   }
 
   public dispose(): void {
-    HistoryPanel._panels.delete(this._pipeline.id);
-    this._panel.dispose();
-    this._disposables.forEach((d) => d.dispose());
-    this._disposables.length = 0;
+    HistoryPanel.panels.delete(this.pipeline.id);
+    this.panel.dispose();
+    this.disposables.forEach((d) => d.dispose());
+    this.disposables.length = 0;
   }
 }

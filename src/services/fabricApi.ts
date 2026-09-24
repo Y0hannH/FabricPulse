@@ -155,7 +155,7 @@ export class FabricApiService {
    *  full interactive sign-in. Doing that on the first 401 (as before) threw
    *  away a perfectly good refresh token and popped a browser window for what
    *  was just an expired access token. */
-  private async _authedFetch(
+  private async authedFetch(
     tenantId: string,
     scope: string,
     url: string,
@@ -202,7 +202,7 @@ export class FabricApiService {
   ): Promise<T> {
     const url = `${BASE_URL}${path}`;
 
-    const response = await this._authedFetch(tenantId, FABRIC_SCOPE, url, path.split('?')[0], {
+    const response = await this.authedFetch(tenantId, FABRIC_SCOPE, url, path.split('?')[0], {
       method: options?.method,
       body: options?.body,
       json: true,
@@ -250,7 +250,7 @@ export class FabricApiService {
 
       // Token is re-read on each page (from cache) so a long pagination
       // sequence can't outlive it
-      const response = await this._authedFetch(tenantId, FABRIC_SCOPE, url, path.split('?')[0]);
+      const response = await this.authedFetch(tenantId, FABRIC_SCOPE, url, path.split('?')[0]);
 
       if (!response.ok) {
         throw new Error(`Fabric API error ${response.status} on ${path.split('?')[0]}`);
@@ -276,7 +276,7 @@ export class FabricApiService {
   ): Promise<T> {
     const url = `${POWERBI_BASE_URL}${path}`;
 
-    const response = await this._authedFetch(
+    const response = await this.authedFetch(
       tenantId,
       POWERBI_SCOPE,
       url,
@@ -309,7 +309,7 @@ export class FabricApiService {
 
       // Token is re-read on each page (from cache) so a long pagination
       // sequence can't outlive it
-      const response = await this._authedFetch(
+      const response = await this.authedFetch(
         tenantId,
         POWERBI_SCOPE,
         url,
@@ -333,7 +333,7 @@ export class FabricApiService {
   // ─── Run-mapping helpers ──────────────────────────────────────────────────
 
   /** Maps Fabric jobs/instances items → PipelineRun[] (for data pipelines). */
-  private _mapRuns(items: FabricRun[], itemId: string): PipelineRun[] {
+  private mapRuns(items: FabricRun[], itemId: string): PipelineRun[] {
     const runs = items.map((r) => {
       const startIso = r.startTimeUtc ? asUtcIso(r.startTimeUtc) : undefined;
       const endIso = r.endTimeUtc ? asUtcIso(r.endTimeUtc) : undefined;
@@ -360,7 +360,7 @@ export class FabricApiService {
   /** Maps Power BI refresh history items → PipelineRun[] (for semantic models).
    *  Different field names: startTime/endTime (no Utc suffix),
    *  requestId (GUID), serviceExceptionJson (JSON string). */
-  private _mapRefreshHistory(items: PbiRefreshItem[], modelId: string): PipelineRun[] {
+  private mapRefreshHistory(items: PbiRefreshItem[], modelId: string): PipelineRun[] {
     const runs = items.map((r) => {
       const startIso = r.startTime ? asUtcIso(r.startTime) : undefined;
       const endIso = r.endTime ? asUtcIso(r.endTime) : undefined;
@@ -503,7 +503,7 @@ export class FabricApiService {
     assertUuids(workspaceId, pipelineId);
     const path = `/workspaces/${workspaceId}/dataPipelines/${pipelineId}/jobs/instances`;
     const items = await this.listAll<FabricRun>(tenantId, path);
-    return this._mapRuns(items, pipelineId);
+    return this.mapRuns(items, pipelineId);
   }
 
   /** Fetches only the first page of runs and returns the most recent one. */
@@ -517,7 +517,7 @@ export class FabricApiService {
     const data = await this.request<FabricListResponse<FabricRun>>(tenantId, path);
     const items = data.value ?? [];
     if (items.length === 0) return undefined;
-    return this._mapRuns(items, pipelineId)[0];
+    return this.mapRuns(items, pipelineId)[0];
   }
 
   /** Returns the new job instance ID (or 'triggered' when the API returns 202 with no body). */
@@ -530,7 +530,7 @@ export class FabricApiService {
     const path = `/workspaces/${workspaceId}/dataPipelines/${pipelineId}/jobs/instances?jobType=Pipeline`;
     const url = `${BASE_URL}${path}`;
 
-    const response = await this._authedFetch(tenantId, FABRIC_SCOPE, url, path.split('?')[0], {
+    const response = await this.authedFetch(tenantId, FABRIC_SCOPE, url, path.split('?')[0], {
       method: 'POST',
       body: '{}',
       json: true,
@@ -561,7 +561,7 @@ export class FabricApiService {
     assertUuids(workspaceId, notebookId);
     const path = `/workspaces/${workspaceId}/items/${notebookId}/jobs/instances`;
     const items = await this.listAll<FabricRun>(tenantId, path);
-    return this._mapRuns(items, notebookId);
+    return this.mapRuns(items, notebookId);
   }
 
   /** Fetches only the first page of notebook runs and returns the most recent one. */
@@ -575,7 +575,7 @@ export class FabricApiService {
     const data = await this.request<FabricListResponse<FabricRun>>(tenantId, path);
     const items = data.value ?? [];
     if (items.length === 0) return undefined;
-    return this._mapRuns(items, notebookId)[0];
+    return this.mapRuns(items, notebookId)[0];
   }
 
   /** Triggers an on-demand notebook run. Returns the new job instance ID
@@ -589,7 +589,7 @@ export class FabricApiService {
     const path = `/workspaces/${workspaceId}/items/${notebookId}/jobs/instances?jobType=RunNotebook`;
     const url = `${BASE_URL}${path}`;
 
-    const response = await this._authedFetch(tenantId, FABRIC_SCOPE, url, path.split('?')[0], {
+    const response = await this.authedFetch(tenantId, FABRIC_SCOPE, url, path.split('?')[0], {
       method: 'POST',
       body: '{}',
       json: true,
@@ -619,7 +619,7 @@ export class FabricApiService {
     assertUuids(workspaceId, copyJobId);
     const path = `/workspaces/${workspaceId}/items/${copyJobId}/jobs/instances`;
     const items = await this.listAll<FabricRun>(tenantId, path);
-    return this._mapRuns(items, copyJobId);
+    return this.mapRuns(items, copyJobId);
   }
 
   /** Fetches only the first page of Copy Job runs and returns the most recent one. */
@@ -633,7 +633,7 @@ export class FabricApiService {
     const data = await this.request<FabricListResponse<FabricRun>>(tenantId, path);
     const items = data.value ?? [];
     if (items.length === 0) return undefined;
-    return this._mapRuns(items, copyJobId)[0];
+    return this.mapRuns(items, copyJobId)[0];
   }
 
   /** Triggers an on-demand Copy Job run. Returns the new job instance ID
@@ -644,7 +644,7 @@ export class FabricApiService {
     const path = `/workspaces/${workspaceId}/items/${copyJobId}/jobs/instances?jobType=Execute`;
     const url = `${BASE_URL}${path}`;
 
-    const response = await this._authedFetch(tenantId, FABRIC_SCOPE, url, path.split('?')[0], {
+    const response = await this.authedFetch(tenantId, FABRIC_SCOPE, url, path.split('?')[0], {
       method: 'POST',
       body: '{}',
       json: true,
@@ -675,7 +675,7 @@ export class FabricApiService {
     assertUuids(workspaceId, dbtJobId);
     const path = `/workspaces/${workspaceId}/items/${dbtJobId}/jobs/instances`;
     const items = await this.listAll<FabricRun>(tenantId, path);
-    return this._mapRuns(items, dbtJobId);
+    return this.mapRuns(items, dbtJobId);
   }
 
   /** Fetches only the first page of dbt Job runs and returns the most recent one. */
@@ -689,7 +689,7 @@ export class FabricApiService {
     const data = await this.request<FabricListResponse<FabricRun>>(tenantId, path);
     const items = data.value ?? [];
     if (items.length === 0) return undefined;
-    return this._mapRuns(items, dbtJobId)[0];
+    return this.mapRuns(items, dbtJobId)[0];
   }
 
   // ─── Semantic model refreshes (Power BI REST API) ─────────────────────────
@@ -704,7 +704,7 @@ export class FabricApiService {
     assertUuids(workspaceId, modelId);
     const path = `/groups/${workspaceId}/datasets/${modelId}/refreshes`;
     const items = await this.listAllPbi<PbiRefreshItem>(tenantId, path);
-    return this._mapRefreshHistory(items, modelId);
+    return this.mapRefreshHistory(items, modelId);
   }
 
   /** Fetches only the most recent refresh (single page, $top=1). */
@@ -718,7 +718,7 @@ export class FabricApiService {
     const data = await this.requestPbi<PbiListResponse<PbiRefreshItem>>(tenantId, path);
     const items = data.value ?? [];
     if (items.length === 0) return undefined;
-    return this._mapRefreshHistory(items, modelId)[0];
+    return this.mapRefreshHistory(items, modelId)[0];
   }
 
   /** Triggers a semantic model refresh via Power BI REST API.
@@ -731,7 +731,7 @@ export class FabricApiService {
     assertUuids(workspaceId, modelId);
     const url = `${POWERBI_BASE_URL}/groups/${workspaceId}/datasets/${modelId}/refreshes`;
 
-    const response = await this._authedFetch(
+    const response = await this.authedFetch(
       tenantId,
       POWERBI_SCOPE,
       url,
@@ -757,7 +757,7 @@ export class FabricApiService {
   /** Fetches the job schedules for a Fabric item under a given job type and
    *  computes the next run. GET /workspaces/{wsId}/items/{itemId}/jobs/{jobType}/schedules
    *  Returns undefined when no schedule exists (or on a non-fatal error). */
-  private async _getItemSchedule(
+  private async getItemSchedule(
     tenantId: string,
     workspaceId: string,
     itemId: string,
@@ -821,7 +821,7 @@ export class FabricApiService {
     workspaceId: string,
     pipelineId: string,
   ): Promise<ScheduleInfo | undefined> {
-    return this._getItemSchedule(tenantId, workspaceId, pipelineId, 'Pipeline');
+    return this.getItemSchedule(tenantId, workspaceId, pipelineId, 'Pipeline');
   }
 
   /** Fetches the job schedules for a notebook and computes the next run.
@@ -831,7 +831,7 @@ export class FabricApiService {
     workspaceId: string,
     notebookId: string,
   ): Promise<ScheduleInfo | undefined> {
-    return this._getItemSchedule(tenantId, workspaceId, notebookId, 'RunNotebook');
+    return this.getItemSchedule(tenantId, workspaceId, notebookId, 'RunNotebook');
   }
 
   /** Fetches the job schedules for a Copy Job and computes the next run.
@@ -841,7 +841,7 @@ export class FabricApiService {
     workspaceId: string,
     copyJobId: string,
   ): Promise<ScheduleInfo | undefined> {
-    return this._getItemSchedule(tenantId, workspaceId, copyJobId, 'Execute');
+    return this.getItemSchedule(tenantId, workspaceId, copyJobId, 'Execute');
   }
 
   /** Fetches the job schedules for a dbt Job and computes the next run.
@@ -853,7 +853,7 @@ export class FabricApiService {
     workspaceId: string,
     dbtJobId: string,
   ): Promise<ScheduleInfo | undefined> {
-    return this._getItemSchedule(tenantId, workspaceId, dbtJobId, 'Execute');
+    return this.getItemSchedule(tenantId, workspaceId, dbtJobId, 'Execute');
   }
 
   /** Fetches the Power BI refresh schedule for a semantic model and computes
@@ -869,7 +869,7 @@ export class FabricApiService {
 
     let response: import('node-fetch').Response;
     try {
-      response = await this._authedFetch(
+      response = await this.authedFetch(
         tenantId,
         POWERBI_SCOPE,
         url,
@@ -1008,7 +1008,7 @@ export class FabricApiService {
       let url = `${ONELAKE_BASE}/${workspaceId}?resource=filesystem&recursive=${recursive}&directory=${directory}`;
       if (continuation) url += `&continuation=${encodeURIComponent(continuation)}`;
 
-      const response = await this._authedFetch(tenantId, ONELAKE_SCOPE, url, 'onelake list paths');
+      const response = await this.authedFetch(tenantId, ONELAKE_SCOPE, url, 'onelake list paths');
 
       // 404 — the Tables folder (or schema) does not exist yet: treat as empty
       if (response.status === 404) return results;
@@ -1158,7 +1158,7 @@ export class FabricApiService {
 
     const body = JSON.stringify({ executionData });
 
-    const response = await this._authedFetch(tenantId, FABRIC_SCOPE, url, path, {
+    const response = await this.authedFetch(tenantId, FABRIC_SCOPE, url, path, {
       method: 'POST',
       body,
       json: true,

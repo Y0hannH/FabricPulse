@@ -122,6 +122,10 @@ export class AuthService {
    *  expired CLI session can be swapped for the interactive flow. */
   private cliCredentials = new Set<string>();
 
+  // Keeps the `_` prefix so the private EventEmitter doesn't collide with the
+  // public `onDidChangeAuthState` Event it backs — the one case where the
+  // prefix isn't redundant.
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private readonly _onDidChangeAuthState = new vscode.EventEmitter<AuthState>();
   /** Fires as an acquisition becomes interactive ('pending'), succeeds ('idle')
    *  or gives up ('failed'). The dashboard turns this into a re-auth banner. */
@@ -140,10 +144,10 @@ export class AuthService {
     // caller never spawns a second browser window for the same sign-in.
     const running = this.inflight.get(cacheKey);
     if (running) {
-      return this._withTimeout(running, tenantId);
+      return this.withTimeout(running, tenantId);
     }
 
-    const acquisition = this._acquireToken(tenantId, scope, cacheKey);
+    const acquisition = this.acquireToken(tenantId, scope, cacheKey);
     this.inflight.set(cacheKey, acquisition);
     // The stored copy outlives callers that time out, so swallow its rejection
     // here — the caller below still receives it through the race.
@@ -157,13 +161,13 @@ export class AuthService {
         }
       });
 
-    return this._withTimeout(acquisition, tenantId);
+    return this.withTimeout(acquisition, tenantId);
   }
 
   /** Races an acquisition against ACQUIRE_TIMEOUT_MS and reports its phase.
    *  On timeout the acquisition is deliberately left running: a browser sign-in
    *  the user finishes late still fills the cache for the next call. */
-  private async _withTimeout(acquisition: Promise<string>, tenantId: string): Promise<string> {
+  private async withTimeout(acquisition: Promise<string>, tenantId: string): Promise<string> {
     let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
 
     const timeout = new Promise<never>((_, reject) => {
@@ -180,7 +184,7 @@ export class AuthService {
 
     const hintTimer = setTimeout(
       () =>
-        this._emit({
+        this.emit({
           tenantId,
           phase: 'pending',
           message: 'Waiting for the Microsoft sign-in to complete in your browser.',
@@ -190,10 +194,10 @@ export class AuthService {
 
     try {
       const token = await Promise.race([acquisition, timeout]);
-      this._emit({ tenantId, phase: 'idle' });
+      this.emit({ tenantId, phase: 'idle' });
       return token;
     } catch (err: unknown) {
-      this._emit({
+      this.emit({
         tenantId,
         phase: 'failed',
         message: err instanceof Error ? err.message : String(err),
@@ -205,11 +209,11 @@ export class AuthService {
     }
   }
 
-  private _emit(state: AuthState): void {
+  private emit(state: AuthState): void {
     this._onDidChangeAuthState.fire(state);
   }
 
-  private async _acquireToken(tenantId: string, scope: string, cacheKey: string): Promise<string> {
+  private async acquireToken(tenantId: string, scope: string, cacheKey: string): Promise<string> {
     let credential = await this.getCredential(tenantId);
 
     let tokenResult;
