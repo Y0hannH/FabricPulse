@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
-import { StorageService } from './storageService';
-import { NotificationLog } from './notificationLog';
-import { PipelineWithStatus } from '../models/types';
+
+import type { PipelineWithStatus } from '../models/types';
+import type { NotificationLog } from './notificationLog';
+import type { StorageService } from './storageService';
 
 /** Max number of alerted run IDs to keep in globalState. Old entries are
  *  evicted FIFO once this limit is reached.  Prevents unbounded growth. */

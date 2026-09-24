@@ -1,5 +1,6 @@
+import type { TokenCredential } from '@azure/identity';
+import { AzureCliCredential, InteractiveBrowserCredential } from '@azure/identity';
 import * as vscode from 'vscode';
-import { AzureCliCredential, InteractiveBrowserCredential, TokenCredential } from '@azure/identity';
 
 export const FABRIC_SCOPE = 'https://api.fabric.microsoft.com/.default';
 export const POWERBI_SCOPE = 'https://analysis.windows.net/powerbi/api/.default';

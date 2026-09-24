@@ -1,14 +1,17 @@
 import fetch from 'node-fetch';
-import { AuthService, FABRIC_SCOPE, POWERBI_SCOPE, ONELAKE_SCOPE } from './authService';
-import {
-  Workspace,
+
+import type {
+  Lakehouse,
+  LakehouseTable,
   Pipeline,
   PipelineRun,
   RunStatus,
-  Lakehouse,
-  LakehouseTable,
+  Workspace,
 } from '../models/types';
-import { ScheduleDef, ScheduleInfo, combineSchedules } from './scheduleService';
+import type { AuthService } from './authService';
+import { FABRIC_SCOPE, ONELAKE_SCOPE, POWERBI_SCOPE } from './authService';
+import type { ScheduleDef, ScheduleInfo } from './scheduleService';
+import { combineSchedules } from './scheduleService';
 
 const BASE_URL = 'https://api.fabric.microsoft.com/v1';
 const POWERBI_BASE_URL = 'https://api.powerbi.com/v1.0/myorg';

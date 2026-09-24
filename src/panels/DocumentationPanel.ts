@@ -1,5 +1,5 @@
-import * as vscode from 'vscode';
 import * as crypto from 'crypto';
+import * as vscode from 'vscode';
 
 function getNonce(): string {
   return crypto.randomBytes(16).toString('hex');

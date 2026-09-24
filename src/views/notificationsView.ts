@@ -1,5 +1,10 @@
 import * as vscode from 'vscode';
-import { NotificationEntry, NotificationLevel, NotificationLog } from '../services/notificationLog';
+
+import type {
+  NotificationEntry,
+  NotificationLevel,
+  NotificationLog,
+} from '../services/notificationLog';
 
 const ICONS: Record<NotificationLevel, vscode.ThemeIcon> = {
   error: new vscode.ThemeIcon('error', new vscode.ThemeColor('charts.red')),

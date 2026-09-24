@@ -1,24 +1,25 @@
-import * as vscode from 'vscode';
-import * as path from 'path';
-import * as fs from 'fs';
 import * as crypto from 'crypto';
-import { FabricApiService } from '../services/fabricApi';
-import { StorageService } from '../services/storageService';
-import { AlertService } from '../services/alertService';
-import { AuthState } from '../services/authService';
-import { NotificationLog } from '../services/notificationLog';
-import { ScheduleInfo } from '../services/scheduleService';
-import {
-  Tenant,
-  Workspace,
-  PipelineWithStatus,
-  PipelineRun,
+import * as fs from 'fs';
+import * as path from 'path';
+import * as vscode from 'vscode';
+
+import type {
   DashboardState,
-  WebviewToExtMsg,
   ExtToDashMsg,
-  ItemType,
   Favorite,
+  ItemType,
+  PipelineRun,
+  PipelineWithStatus,
+  Tenant,
+  WebviewToExtMsg,
+  Workspace,
 } from '../models/types';
+import type { AlertService } from '../services/alertService';
+import type { AuthState } from '../services/authService';
+import type { FabricApiService } from '../services/fabricApi';
+import type { NotificationLog } from '../services/notificationLog';
+import type { ScheduleInfo } from '../services/scheduleService';
+import type { StorageService } from '../services/storageService';
 
 // Utility ─────────────────────────────────────────────────────────────────────
 

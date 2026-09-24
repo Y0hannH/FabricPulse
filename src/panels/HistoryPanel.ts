@@ -1,10 +1,11 @@
-import * as vscode from 'vscode';
-import * as path from 'path';
-import * as fs from 'fs';
 import * as crypto from 'crypto';
-import { StorageService } from '../services/storageService';
-import { NotificationLog } from '../services/notificationLog';
-import { Pipeline, HistoryData, HistoryToExtMsg, ExtToHistoryMsg } from '../models/types';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as vscode from 'vscode';
+
+import type { ExtToHistoryMsg, HistoryData, HistoryToExtMsg, Pipeline } from '../models/types';
+import type { NotificationLog } from '../services/notificationLog';
+import type { StorageService } from '../services/storageService';
 
 /** Cryptographically secure nonce for CSP. Never use Math.random() for nonces. */
 function getNonce(): string {

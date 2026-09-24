@@ -1,9 +1,10 @@
-import * as vscode from 'vscode';
-import * as path from 'path';
 import * as fs from 'fs';
+import * as path from 'path';
 import type { Database as SqlDatabase } from 'sql.js';
-import { StoredRun, Annotation, Favorite, PatternWarning } from '../models/types';
-import { NotificationLog } from './notificationLog';
+import * as vscode from 'vscode';
+
+import type { Annotation, Favorite, PatternWarning, StoredRun } from '../models/types';
+import type { NotificationLog } from './notificationLog';
 
 // ─────────────────────────────────────────────────────────────────────────────
 

@@ -1,20 +1,21 @@
-import * as vscode from 'vscode';
-import * as path from 'path';
-import * as fs from 'fs';
 import * as crypto from 'crypto';
-import { FabricApiService } from '../services/fabricApi';
-import { StorageService } from '../services/storageService';
-import { NotificationLog } from '../services/notificationLog';
-import {
+import * as fs from 'fs';
+import * as path from 'path';
+import * as vscode from 'vscode';
+
+import type {
+  BulkMaintenanceProgress,
+  ExtToLakehouseMsg,
+  Lakehouse,
+  LakehouseState,
+  LakehouseTable,
+  LakehouseToExtMsg,
   Tenant,
   Workspace,
-  Lakehouse,
-  LakehouseTable,
-  LakehouseState,
-  LakehouseToExtMsg,
-  ExtToLakehouseMsg,
-  BulkMaintenanceProgress,
 } from '../models/types';
+import type { FabricApiService } from '../services/fabricApi';
+import type { NotificationLog } from '../services/notificationLog';
+import type { StorageService } from '../services/storageService';
 
 // Utility ─────────────────────────────────────────────────────────────────────
 
