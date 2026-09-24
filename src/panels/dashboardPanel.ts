@@ -1021,7 +1021,7 @@ export class DashboardPanel {
       }
 
       case 'viewHistory': {
-        const { HistoryPanel } = await import('./HistoryPanel');
+        const { HistoryPanel } = await import('./historyPanel');
         const target = this.pipelines.find((p) => p.id === msg.pipelineId);
         if (!target) break;
         this.post({

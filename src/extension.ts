@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
 
 import type { Tenant } from './models/types';
-import { DashboardPanel } from './panels/DashboardPanel';
-import { DocumentationPanel } from './panels/DocumentationPanel';
-import { LakehousePanel } from './panels/LakehousePanel';
+import { DashboardPanel } from './panels/dashboardPanel';
+import { DocumentationPanel } from './panels/documentationPanel';
+import { LakehousePanel } from './panels/lakehousePanel';
 import { AlertService } from './services/alertService';
 import { AuthService } from './services/authService';
 import { FabricApiService } from './services/fabricApi';
@@ -183,7 +183,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       // Try to reconstruct a Pipeline object from storage so we can open HistoryPanel
       const lastRun = _storage.getLastRun(pipelineId);
       if (lastRun) {
-        const { HistoryPanel: HP } = await import('./panels/HistoryPanel');
+        const { HistoryPanel: HP } = await import('./panels/historyPanel');
         HP.createOrShow(
           context.extensionUri,
           {
