@@ -58,9 +58,10 @@ const MAX_RANGE_MS = 63 * 86_400_000;
 /** The clock redraw: planned runs turn into past ones as time goes by. */
 const CLOCK_TICK_MS = 60_000;
 
-/** Floor for the background refresh. The dashboard polls as fast as the setting
- *  allows (10 s); this panel re-fetches schedules too, so it stays gentler. */
-const MIN_POLL_SECONDS = 60;
+/** A schedule changes when someone edits it in Fabric, not every minute. The polling
+ *  loop therefore re-reads runs every cycle but a schedule only this often — which
+ *  keeps each cycle at one call per item, the dashboard's cost. Refresh forces it. */
+const SCHEDULE_TTL_MS = 10 * 60_000;
 
 export class CalendarPanel {
   public static currentPanel: CalendarPanel | undefined;
@@ -84,12 +85,15 @@ export class CalendarPanel {
   private listedKey = '';
   private schedulesById = new Map<string, ScheduleInfo>();
   private fetchedAt = new Map<string, number>();
+  private scheduleFetchedAt = new Map<string, number>();
   private historyLoaded = new Set<string>();
 
   private rangeStartMs: number;
   private rangeEndMs: number;
 
   private lastRefreshed = '';
+  /** When the polling loop fires next, shown as "Next in …" like the dashboard's. */
+  private nextRefreshAt = '';
   private isLoading = false;
   private progress: { done: number; total: number } | undefined;
   private loadingStartedAt = 0;
@@ -198,7 +202,11 @@ export class CalendarPanel {
     this.postState();
   }
 
-  public async refresh(force = false): Promise<void> {
+  /** `force`: refetch everything, schedules included (the Refresh button).
+   *  `due`: a polling tick — every item in scope is due, whatever its age. Comparing
+   *  ages instead skipped every other cycle: items fetched a few seconds into the
+   *  last cycle are still a few seconds short of one interval at the next tick. */
+  public async refresh(force = false, due = false): Promise<void> {
     if (this.isLoading) {
       // See DashboardPanel.refresh: a hung refresh must not swallow every later one.
       if (Date.now() - this.loadingStartedAt < STUCK_REFRESH_MS) {
@@ -227,7 +235,10 @@ export class CalendarPanel {
     const seq = ++this.refreshSeq;
     const isCurrent = () => seq === this.refreshSeq;
 
-    if (force) this.schedulesById.clear();
+    if (force) {
+      this.schedulesById.clear();
+      this.scheduleFetchedAt.clear();
+    }
 
     try {
       // The recorded past is already local: show it before any network call.
@@ -236,7 +247,7 @@ export class CalendarPanel {
 
       await this.listLiveItems(force, isCurrent);
       if (!isCurrent()) return;
-      await this.fetchLive(this.scopeItems(), { force }, isCurrent);
+      await this.fetchLive(this.scopeItems(), { force, due }, isCurrent);
 
       if (isCurrent()) this.lastRefreshed = new Date().toISOString();
     } catch (err: unknown) {
@@ -376,11 +387,12 @@ export class CalendarPanel {
 
   // ─── Live data ──────────────────────────────────────────────────────────────
 
-  /** Fetches schedule + runs for the items whose data is older than the polling
-   *  interval, in batches that follow the same throttling settings as the dashboard. */
+  /** Fetches runs (and schedules, when due) for the items whose data is older than the
+   *  polling interval — or all of them on a force or a polling tick — in batches that
+   *  follow the same throttling settings as the dashboard. */
   private async fetchLive(
     items: Pipeline[],
-    opts: { force: boolean; fullHistory?: boolean },
+    opts: { force: boolean; due?: boolean; fullHistory?: boolean },
     isCurrent: () => boolean,
   ): Promise<void> {
     const cfg = vscode.workspace.getConfiguration('fabricPulse');
@@ -390,7 +402,7 @@ export class CalendarPanel {
     const batchThreshold = cfg.get<number>('batchThreshold', 10);
 
     const stale = items.filter(
-      (p) => opts.force || Date.now() - (this.fetchedAt.get(p.id) ?? 0) >= pollingMs,
+      (p) => opts.force || opts.due || Date.now() - (this.fetchedAt.get(p.id) ?? 0) >= pollingMs,
     );
     if (stale.length === 0) return;
 
@@ -429,10 +441,16 @@ export class CalendarPanel {
       itemType: p.itemType,
     };
 
+    // Recorded even when the item turns out to have no schedule, so those aren't asked
+    // again every cycle.
+    const scheduleDue = Date.now() - (this.scheduleFetchedAt.get(p.id) ?? 0) >= SCHEDULE_TTL_MS;
+
     await Promise.all([
       (async () => {
+        if (!scheduleDue) return;
         try {
           const info = await fetchItemSchedule(this.fabricApi, ref);
+          this.scheduleFetchedAt.set(p.id, Date.now());
           if (info !== undefined) this.schedulesById.set(p.id, info);
         } catch (err) {
           console.warn(`[FabricPulse] Calendar: schedule fetch failed for ${p.id}:`, err);
@@ -475,17 +493,19 @@ export class CalendarPanel {
     this.fetchedAt.set(p.id, Date.now());
   }
 
-  /** Background refresh. The next tick is scheduled *before* the refresh runs, so a
-   *  refresh that throws or hangs costs one cycle, never the loop (see CLAUDE.md). */
+  /** Background refresh, at the dashboard's `pollingInterval`. The next tick is
+   *  scheduled *before* the refresh runs, so a refresh that throws or hangs costs one
+   *  cycle, never the loop (see CLAUDE.md). The setting is re-read every cycle. */
   private schedulePoll(): void {
     if (this.disposed) return;
-    const seconds = Math.max(
-      MIN_POLL_SECONDS,
-      vscode.workspace.getConfiguration('fabricPulse').get<number>('pollingInterval', 60),
-    );
+    const seconds = vscode.workspace
+      .getConfiguration('fabricPulse')
+      .get<number>('pollingInterval', 60);
+    this.nextRefreshAt = new Date(Date.now() + seconds * 1000).toISOString();
+    this.postState();
     this.pollTimer = setTimeout(() => {
       this.schedulePoll();
-      this.refresh().catch((err) =>
+      this.refresh(false, true).catch((err) =>
         console.warn('[FabricPulse] Calendar polling refresh failed — the loop continues:', err),
       );
     }, seconds * 1000);
@@ -599,6 +619,7 @@ export class CalendarPanel {
         this.selectedWorkspaceId = '';
         this.catalog.clear();
         this.schedulesById.clear();
+        this.scheduleFetchedAt.clear();
         this.fetchedAt.clear();
         this.historyLoaded.clear();
         this.listedKey = '';
@@ -732,6 +753,7 @@ export class CalendarPanel {
       rangeStart: new Date(this.rangeStartMs).toISOString(),
       rangeEnd: new Date(this.rangeEndMs).toISOString(),
       lastRefreshed: this.lastRefreshed,
+      nextRefreshAt: this.nextRefreshAt,
       isLoading: this.isLoading,
       progress: this.progress,
       auth: this.authState,
