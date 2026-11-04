@@ -291,7 +291,7 @@ export class DocumentationPanel {
     <h2>8 · Calendar</h2>
     <p>Open the Calendar from the sidebar (under <em>Open Dashboard</em>) or the command palette to see everything that runs, laid out like an Outlook calendar. It opens on the current week; switch to a single day with <kbd>Day</kbd>, move with <kbd>‹</kbd> / <kbd>›</kbd>, and come back with <kbd>Today</kbd>.</p>
     <ul class="feat">
-      <li><strong>Same filters as the dashboard</strong> — tenant, workspace, search, ★ Favorites, type pills and status pills. Status pills match on the item's last run, as in the dashboard. The calendar adds <kbd>🗓 Scheduled</kbd>, which keeps only items that have a schedule (enabled or paused) — useful to see just what will run.</li>
+      <li><strong>Same filters as the dashboard</strong> — tenant, workspace, search, ★ Favorites, type pills and status pills. Status pills match on the item's last run, as in the dashboard. The calendar adds <kbd>📅 Scheduled</kbd>, which keeps only items that have a schedule (enabled or paused) — useful to see just what will run.</li>
       <li><strong>Past</strong> — each recorded run is a block from its start to its end, colored by status.</li>
       <li><strong>Future</strong> — each upcoming scheduled run is a dashed block from its start time to the <em>average duration</em> of the item's past runs. It is an estimate: an item with no completed run yet is drawn with a minimum height only.</li>
       <li><strong>Frequent schedules</strong> — an item that runs every 30 minutes or less is drawn as a thin strip along the right edge of each day (first to last run) instead of hundreds of blocks. A recorded day shows its worst status, so one failure among 95 successes is visible.</li>

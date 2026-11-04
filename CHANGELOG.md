@@ -2,6 +2,12 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
+## [1.12.1] - 2026-11-04
+
+### Changed
+- **Calendar — Scheduled filter icon**: the filter now uses 📅 instead of 🗓, whose glyph rendered small and hard to read on some systems
+- **README status badge**: now reads *Active* instead of *In Development*
+
 ## [1.12.0] - 2026-11-04
 
 ### Added
