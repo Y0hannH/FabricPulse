@@ -268,7 +268,8 @@ function startPolling(): void {
     }
     scheduleNext();
     try {
-      await DashboardPanel.currentPanel.refresh();
+      // due: every item in scope is re-read this cycle, whatever its age.
+      await DashboardPanel.currentPanel.refresh(false, false, true);
     } catch (err: unknown) {
       console.warn('[FabricPulse] Polling refresh failed — the loop continues:', err);
     }
