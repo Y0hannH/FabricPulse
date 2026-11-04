@@ -2,7 +2,7 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
-## [Unreleased]
+## [1.12.1] - 2026-11-04
 
 ### Changed
 - **Calendar — Scheduled filter icon**: the filter now uses 📅 instead of 🗓, whose glyph rendered small and hard to read on some systems
