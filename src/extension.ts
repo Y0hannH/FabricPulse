@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 
 import type { Tenant } from './models/types';
+import { CalendarPanel } from './panels/calendarPanel';
 import { DashboardPanel } from './panels/dashboardPanel';
 import { DocumentationPanel } from './panels/documentationPanel';
 import { LakehousePanel } from './panels/lakehousePanel';
@@ -82,6 +83,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       startPolling();
     }),
 
+    // fabricPulse.openCalendar ──────────────────────────────────────────────
+    vscode.commands.registerCommand('fabricPulse.openCalendar', () => {
+      CalendarPanel.createOrShow(
+        context.extensionUri,
+        fabricApi,
+        _storage,
+        context,
+        notificationLog,
+      );
+    }),
+
     // fabricPulse.openLakehouses ────────────────────────────────────────────
     vscode.commands.registerCommand('fabricPulse.openLakehouses', () => {
       LakehousePanel.createOrShow(
@@ -151,6 +163,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         LakehousePanel.currentPanel.reloadTenants();
         await LakehousePanel.currentPanel.refresh();
       }
+      if (CalendarPanel.currentPanel) {
+        CalendarPanel.currentPanel.reloadTenants();
+        await CalendarPanel.currentPanel.refresh();
+      }
     }),
 
     // fabricPulse.exportHistory ────────────────────────────────────────────
@@ -175,6 +191,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (DashboardPanel.currentPanel) {
         await DashboardPanel.currentPanel.refresh();
       }
+      CalendarPanel.currentPanel?.redraw();
     }),
 
     // Internal: open history for a specific pipeline ────────────────────────

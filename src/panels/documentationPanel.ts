@@ -190,6 +190,7 @@ export class DocumentationPanel {
       <li><a href="#actions">Quick Actions</a></li>
       <li><a href="#history">History &amp; Annotations</a></li>
       <li><a href="#lakehouses">Lakehouses</a></li>
+      <li><a href="#calendar">Calendar</a></li>
       <li><a href="#alerts">Alerts &amp; Patterns</a></li>
       <li><a href="#workspaces">Workspaces &amp; Favorites</a></li>
       <li><a href="#settings">Settings</a></li>
@@ -286,8 +287,25 @@ export class DocumentationPanel {
     </ul>
   </section>
 
+  <section id="calendar">
+    <h2>8 · Calendar</h2>
+    <p>Open the Calendar from the sidebar (under <em>Open Dashboard</em>) or the command palette to see everything that runs, laid out like an Outlook calendar. It opens on the current week; switch to a single day with <kbd>Day</kbd>, move with <kbd>‹</kbd> / <kbd>›</kbd>, and come back with <kbd>Today</kbd>.</p>
+    <ul class="feat">
+      <li><strong>Same filters as the dashboard</strong> — tenant, workspace, search, ★ Favorites, type pills and status pills. Status pills match on the item's last run, as in the dashboard. The calendar adds <kbd>🗓 Scheduled</kbd>, which keeps only items that have a schedule (enabled or paused) — useful to see just what will run.</li>
+      <li><strong>Past</strong> — each recorded run is a block from its start to its end, colored by status.</li>
+      <li><strong>Future</strong> — each upcoming scheduled run is a dashed block from its start time to the <em>average duration</em> of the item's past runs. It is an estimate: an item with no completed run yet is drawn with a minimum height only.</li>
+      <li><strong>Frequent schedules</strong> — an item that runs every 30 minutes or less is drawn as a thin strip along the right edge of each day (first to last run) instead of hundreds of blocks. A recorded day shows its worst status, so one failure among 95 successes is visible.</li>
+      <li><strong>Crowded times</strong> — when more blocks overlap than fit side by side (a nightly batch at 02:00), the rest are folded into a <kbd>+N</kbd> pill; click it to list them.</li>
+      <li><strong>Details</strong> — click a block for its status, times, duration and schedule, with <kbd>Open in Fabric</kbd> and <kbd>History</kbd>.</li>
+      <li><strong>Load history</strong> — the past comes from the local run history. With 40 items or fewer in scope the full history is fetched on first load; for larger scopes only the latest run is, and <kbd>⬇ Load history</kbd> fetches the full history of the items currently shown.</li>
+    </ul>
+    <div class="callout">
+      Times are shown in your computer's time zone; schedules are converted from the time zone they are defined in. Nothing is fetched when you browse to another week — upcoming runs are computed from the schedules already loaded.
+    </div>
+  </section>
+
   <section id="alerts">
-    <h2>8 · Alerts &amp; Patterns</h2>
+    <h2>9 · Alerts &amp; Patterns</h2>
     <ul class="feat">
       <li><strong>Failure alerts</strong> — failed runs surface automatically as VS Code notifications.</li>
       <li><strong>Daily report</strong> — a summary notification at a configurable time (default 18:00).</li>
@@ -297,7 +315,7 @@ export class DocumentationPanel {
   </section>
 
   <section id="workspaces">
-    <h2>9 · Workspaces &amp; Favorites</h2>
+    <h2>10 · Workspaces &amp; Favorites</h2>
     <ul class="feat">
       <li><strong>Favorites</strong> — star an item to pin it; favorites load first on startup.</li>
       <li><strong>Workspace picker</strong> — filter to a single workspace, star workspaces, or blacklist ones you don't want polled.</li>
@@ -306,7 +324,7 @@ export class DocumentationPanel {
   </section>
 
   <section id="settings">
-    <h2>10 · Settings</h2>
+    <h2>11 · Settings</h2>
     <p>Open VS Code Settings and search <kbd>fabricPulse</kbd>, or edit <code>settings.json</code> directly.</p>
     <table class="settings">
       <thead>
@@ -358,10 +376,11 @@ export class DocumentationPanel {
   </section>
 
   <section id="commands">
-    <h2>11 · Commands</h2>
+    <h2>12 · Commands</h2>
     <p>Available from the Command Palette (<kbd>Ctrl/Cmd</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd>):</p>
     <ul class="feat">
       <li><code>FabricPulse: Open Dashboard</code></li>
+      <li><code>FabricPulse: Open Calendar</code></li>
       <li><code>FabricPulse: Open Lakehouses</code></li>
       <li><code>FabricPulse: Open Documentation</code></li>
       <li><code>FabricPulse: Add Tenant</code></li>

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none';
+                 style-src {{WEBVIEW_CSP_SOURCE}} 'unsafe-inline';
+                 script-src {{WEBVIEW_CSP_SOURCE}} 'nonce-{{NONCE}}';
+                 img-src data:;" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- The calendar shares the dashboard's toolbar, filter pills, buttons and toasts. -->
+  <link rel="stylesheet" href="{{DASHBOARD_CSS_URI}}" />
+  <link rel="stylesheet" href="{{CSS_URI}}" />
+  <title>FabricPulse Calendar</title>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ── Toolbar (same filters as the dashboard) ── -->
+  <header class="toolbar">
+    <div class="toolbar-left">
+      <span class="brand">📅 FabricPulse Calendar</span>
+
+      <select id="tenant-select" class="select" title="Active tenant">
+        <option value="">— No tenant —</option>
+      </select>
+
+      <div class="ws-picker" id="ws-picker">
+        <button class="ws-picker-toggle" id="ws-picker-toggle" title="Filter by workspace">
+          <span id="ws-picker-label">All workspaces</span>
+          <span class="ws-picker-arrow">▾</span>
+        </button>
+        <div class="ws-picker-dropdown hidden" id="ws-picker-dropdown">
+          <input type="text" class="ws-picker-search" id="ws-picker-search"
+                 placeholder="Search…" autocomplete="off" />
+          <ul class="ws-picker-list" id="ws-picker-list"></ul>
+        </div>
+      </div>
+
+      <div class="search-wrap">
+        <input type="text" id="filter-input" class="input" placeholder="Filter items…" autocomplete="off" />
+        <button id="btn-clear-filter" class="btn-icon" title="Clear filter" style="display:none">✕</button>
+      </div>
+
+      <label class="toggle-label" title="Show only starred items">
+        <input type="checkbox" id="favorites-only" />
+        <span>★ Favorites</span>
+      </label>
+
+      <label class="toggle-label" title="Show only items that have a schedule (enabled or paused)">
+        <input type="checkbox" id="scheduled-only" />
+        <span>🗓 Scheduled</span>
+      </label>
+
+      <span class="filter-sep"></span>
+
+      <div class="type-filters" id="type-filters">
+        <button class="type-filter-btn active" data-itype="all"           title="Show all item types">All</button>
+        <button class="type-filter-btn"         data-itype="pipeline"     title="Show pipelines only">Pipeline</button>
+        <button class="type-filter-btn"         data-itype="semanticModel" title="Show semantic models only">Model</button>
+        <button class="type-filter-btn"         data-itype="notebook"     title="Show notebooks only">Notebook</button>
+        <button class="type-filter-btn"         data-itype="copyJob"      title="Show copy jobs only">Copy Job</button>
+        <button class="type-filter-btn"         data-itype="dbtJob"       title="Show dbt jobs only">dbt Job</button>
+      </div>
+
+      <span class="filter-sep"></span>
+
+      <div class="status-filters" id="status-filters">
+        <button class="status-filter-btn" data-status="Failed"     title="Show items whose last run failed">Failed</button>
+        <button class="status-filter-btn" data-status="Succeeded"  title="Show items whose last run succeeded">Succeeded</button>
+        <button class="status-filter-btn" data-status="neverRun"   title="Show items with no runs">Never run</button>
+        <button class="status-filter-btn" data-status="InProgress" title="Show items currently running">In Progress</button>
+      </div>
+    </div>
+
+    <div class="toolbar-right">
+      <span id="last-refreshed" class="muted text-xs"></span>
+      <button id="btn-history" class="btn btn-secondary"
+              title="Fetch the full run history of the items shown — fills in the past of the calendar">⬇ Load history</button>
+      <button id="btn-refresh" class="btn btn-secondary" title="Refresh now">↺ Refresh</button>
+      <button id="btn-add-tenant" class="btn btn-primary">+ Add Tenant</button>
+    </div>
+  </header>
+
+  <!-- ── Loading bar ── -->
+  <div id="loading-bar" class="loading-bar hidden">
+    <div class="loading-bar-fill"></div>
+  </div>
+
+  <!-- ── Re-authentication banner ── -->
+  <div id="auth-banner" class="auth-banner hidden">
+    <span class="auth-banner-icon" id="auth-banner-icon">🔑</span>
+    <span class="auth-banner-text" id="auth-banner-text"></span>
+    <button id="btn-reauth" class="btn btn-secondary btn-sm">Sign in</button>
+  </div>
+
+  <!-- ── Toast notification ── -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- ── Calendar navigation ── -->
+  <div class="cal-nav" id="cal-nav">
+    <button id="btn-today" class="btn btn-secondary">Today</button>
+    <button id="btn-prev" class="btn btn-secondary btn-nav" title="Previous">‹</button>
+    <button id="btn-next" class="btn btn-secondary btn-nav" title="Next">›</button>
+    <span id="cal-title" class="cal-title"></span>
+    <div class="view-switch" id="view-switch">
+      <button class="view-btn" data-view="day">Day</button>
+      <button class="view-btn active" data-view="week">Week</button>
+    </div>
+    <span id="cal-meta" class="muted text-xs"></span>
+    <div class="cal-legend">
+      <span><i class="legend-swatch sw-succeeded"></i>Succeeded</span>
+      <span><i class="legend-swatch sw-failed"></i>Failed</span>
+      <span><i class="legend-swatch sw-inprogress"></i>In progress</span>
+      <span><i class="legend-swatch sw-other"></i>Other</span>
+      <span><i class="legend-swatch sw-planned"></i>Planned</span>
+    </div>
+  </div>
+
+  <!-- ── Main content ── -->
+  <main id="main">
+
+    <div id="empty-tenants" class="empty-state hidden">
+      <p class="empty-icon">📅</p>
+      <p class="empty-title">No tenants configured</p>
+      <p class="empty-sub">Add your first Azure tenant to see what runs and when.</p>
+      <button class="btn btn-primary" id="btn-empty-add-tenant">+ Add Tenant</button>
+    </div>
+
+    <div id="cal-wrap" class="cal-wrap hidden">
+      <div class="cal-head" id="cal-head"></div>
+      <div class="cal-scroll" id="cal-scroll">
+        <div class="cal-grid" id="cal-grid"></div>
+        <div id="cal-empty" class="cal-empty hidden"></div>
+      </div>
+    </div>
+
+  </main>
+
+  <div id="popover" class="cal-popover hidden"></div>
+
+</div>
+
+<script nonce="{{NONCE}}" src="{{JS_URI}}"></script>
+</body>
+</html>

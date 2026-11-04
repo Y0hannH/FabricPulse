@@ -321,6 +321,82 @@ export type ExtToDashMsg =
       log?: boolean;
     };
 
+// ─── Calendar models ──────────────────────────────────────────────────────────
+
+/** An item that appears in the calendar, with what the webview needs to filter
+ *  it exactly like the dashboard does (name, favorite, type, last status). */
+export interface CalendarItem {
+  id: string;
+  displayName: string;
+  workspaceId: string;
+  workspaceName: string;
+  itemType: ItemType;
+  isFavorite: boolean;
+  lastStatus?: string; // status of the most recent known run; undefined = never run
+  scheduleSummary?: string;
+  scheduleEnabled?: boolean; // false when a schedule exists but is paused
+}
+
+/** One block on the calendar.
+ *  - `run`: a recorded run, drawn from its start to its end.
+ *  - `planned`: an upcoming scheduled run, drawn up to start + the item's average duration.
+ *  - `band`: a cron firing too often to draw run by run (every 5 min…), folded into one
+ *    strip per day from its first to its last run. A band of recorded runs carries a
+ *    `status`; a band of upcoming runs doesn't. */
+export interface CalendarEvent {
+  itemId: string;
+  kind: 'run' | 'planned' | 'band';
+  start: string; // ISO-8601 UTC
+  end: string; // ISO-8601 UTC; equals `start` when no duration is known
+  /** Runs, and bands of recorded runs (the worst status of the day — a failure shows). */
+  status?: string;
+  runId?: string; // runs only
+  /** Planned/band events: true when the end comes from the average of past runs. */
+  estimated?: boolean;
+  /** Band events: e.g. "every 5 min · 96 runs · 2 failed". */
+  label?: string;
+}
+
+export interface CalendarState {
+  tenants: Tenant[];
+  currentTenantId: string;
+  workspaces: Workspace[];
+  selectedWorkspaceId: string;
+  favoritesOnly: boolean;
+  items: CalendarItem[];
+  events: CalendarEvent[];
+  rangeStart: string; // ISO-8601 UTC, inclusive
+  rangeEnd: string; // ISO-8601 UTC, exclusive
+  lastRefreshed: string;
+  isLoading: boolean;
+  progress?: { done: number; total: number };
+  auth?: { phase: 'pending' | 'failed'; message?: string };
+}
+
+// Messages sent FROM calendar webview TO extension
+export type CalendarToExtMsg =
+  | { type: 'ready'; rangeStart: string; rangeEnd: string }
+  | { type: 'refresh' }
+  | { type: 'setRange'; rangeStart: string; rangeEnd: string }
+  | { type: 'selectTenant'; tenantId: string }
+  | { type: 'selectWorkspace'; workspaceId: string }
+  | { type: 'setFavoritesOnly'; enabled: boolean }
+  | { type: 'loadHistory'; itemIds: string[] }
+  | { type: 'addTenant' }
+  | { type: 'reauthenticate' }
+  | { type: 'openInFabric'; itemId: string }
+  | { type: 'viewHistory'; itemId: string };
+
+// Messages sent FROM extension TO calendar webview
+export type ExtToCalendarMsg =
+  | { type: 'updateState'; state: CalendarState }
+  | {
+      type: 'toast';
+      message: string;
+      level: 'info' | 'success' | 'error' | 'warning';
+      log?: boolean;
+    };
+
 // Messages sent FROM extension TO history panel
 export type ExtToHistoryMsg =
   | { type: 'historyData'; data: HistoryData }

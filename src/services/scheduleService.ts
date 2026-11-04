@@ -31,6 +31,9 @@ export interface ScheduleInfo {
   enabled: boolean;
   nextRunAt?: string; // ISO-8601 UTC instant of the next run, if computable
   summary: string; // human-readable description (tooltip)
+  /** The enabled definitions behind `nextRunAt`. Kept so the calendar can expand
+   *  every upcoming occurrence instead of only the first one. */
+  defs?: ScheduleDef[];
 }
 
 const WEEKDAY_INDEX: Record<string, number> = {
@@ -170,18 +173,31 @@ interface WallClock {
   second: number;
 }
 
+/** Building an Intl.DateTimeFormat is the expensive part of every conversion
+ *  below; expanding a week of occurrences does hundreds of them. */
+const _formatters = new Map<string, Intl.DateTimeFormat>();
+
+function formatterFor(tz: string): Intl.DateTimeFormat {
+  let fmt = _formatters.get(tz);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    _formatters.set(tz, fmt);
+  }
+  return fmt;
+}
+
 /** Reads the wall-clock components of a UTC instant as observed in `tz`. */
 function tzParts(utcMs: number, tz: string): WallClock {
-  const fmt = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    hour12: false,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+  const fmt = formatterFor(tz);
   const map: Record<string, string> = {};
   for (const p of fmt.formatToParts(new Date(utcMs))) {
     if (p.type !== 'literal') map[p.type] = p.value;
@@ -322,6 +338,113 @@ export function computeNextRun(def: ScheduleDef, nowMs: number = Date.now()): nu
   return undefined;
 }
 
+/** Hard stop for a single expansion. A once-a-minute cron over a week is ~10k
+ *  instants; past this the caller is asking for a range the calendar can't draw. */
+const MAX_OCCURRENCES = 20_000;
+
+/** Every run instant (epoch ms, ascending) of one schedule inside [fromMs, toMs].
+ *  Same rules as computeNextRun — start/end bounds, time zone, "every N months" —
+ *  but returns the whole window instead of only the first hit. */
+export function expandOccurrences(def: ScheduleDef, fromMs: number, toMs: number): number[] {
+  if (!def.enabled || toMs < fromMs) return [];
+  const tz = resolveTz(def.localTimeZoneId);
+
+  const startWc = def.startDateTime ? parseWallClock(def.startDateTime) : undefined;
+  const endWc = def.endDateTime ? parseWallClock(def.endDateTime) : undefined;
+  const startMs = startWc
+    ? zonedWallClockToUtc(
+        startWc.year,
+        startWc.month,
+        startWc.day,
+        startWc.hour,
+        startWc.minute,
+        tz,
+      )
+    : undefined;
+  const endMs = endWc
+    ? zonedWallClockToUtc(endWc.year, endWc.month, endWc.day, endWc.hour, endWc.minute, tz)
+    : undefined;
+
+  const lower = Math.max(fromMs, startMs ?? fromMs);
+  const upper = Math.min(toMs, endMs ?? toMs);
+  if (upper < lower) return [];
+
+  const out: number[] = [];
+
+  if (def.type === 'Cron') {
+    if (!def.interval || def.interval <= 0 || startMs == null) return [];
+    const intervalMs = def.interval * 60_000;
+    let t =
+      lower <= startMs ? startMs : startMs + Math.ceil((lower - startMs) / intervalMs) * intervalMs;
+    for (; t <= upper && out.length < MAX_OCCURRENCES; t += intervalMs) out.push(t);
+    return out;
+  }
+
+  const times = (def.times ?? [])
+    .map((t) => {
+      const [h, mi] = t.split(':');
+      return { h: Number(h), mi: Number(mi) };
+    })
+    .filter((t) => Number.isFinite(t.h) && Number.isFinite(t.mi))
+    .sort((a, b) => a.h - b.h || a.mi - b.mi);
+  if (times.length === 0) return [];
+
+  if (def.type === 'Monthly') {
+    const recurrence = def.recurrence && def.recurrence > 0 ? def.recurrence : 1;
+    const anchorWc = tzParts(startMs ?? lower, tz);
+    const anchorIdx = anchorWc.year * 12 + (anchorWc.month - 1);
+    const first = tzParts(lower, tz);
+    const last = tzParts(upper, tz);
+    const firstIdx = first.year * 12 + (first.month - 1);
+    const lastIdx = last.year * 12 + (last.month - 1);
+
+    for (let monthIdx = firstIdx; monthIdx <= lastIdx; monthIdx++) {
+      if (monthIdx < anchorIdx || (monthIdx - anchorIdx) % recurrence !== 0) continue;
+      const cy = Math.floor(monthIdx / 12);
+      const cm = (monthIdx % 12) + 1;
+      const day = resolveMonthlyDay(def, cy, cm);
+      if (day == null) continue;
+      for (const t of times) {
+        const cand = zonedWallClockToUtc(cy, cm, day, t.h, t.mi, tz);
+        if (cand >= lower && cand <= upper) out.push(cand);
+      }
+    }
+    return out;
+  }
+
+  const weekdaySet =
+    def.type === 'Weekly'
+      ? new Set(
+          (def.weekdays ?? []).map((d) => WEEKDAY_INDEX[d.toLowerCase()]).filter((n) => n != null),
+        )
+      : null;
+  if (weekdaySet && weekdaySet.size === 0) return [];
+
+  // Walk the schedule's own calendar days. The window is padded by a day on each
+  // side so a run near midnight is still found when the zone sits far from UTC.
+  const lowWc = tzParts(lower, tz);
+  const highWc = tzParts(upper, tz);
+  const firstDay = Date.UTC(lowWc.year, lowWc.month - 1, lowWc.day) - 86_400_000;
+  const lastDay = Date.UTC(highWc.year, highWc.month - 1, highWc.day) + 86_400_000;
+
+  for (let day = firstDay; day <= lastDay && out.length < MAX_OCCURRENCES; day += 86_400_000) {
+    const cal = new Date(day);
+    if (weekdaySet && !weekdaySet.has(cal.getUTCDay())) continue;
+    for (const t of times) {
+      const cand = zonedWallClockToUtc(
+        cal.getUTCFullYear(),
+        cal.getUTCMonth() + 1,
+        cal.getUTCDate(),
+        t.h,
+        t.mi,
+        tz,
+      );
+      if (cand >= lower && cand <= upper) out.push(cand);
+    }
+  }
+  return out;
+}
+
 /** One-line human-readable description of a schedule (used as a tooltip). */
 export function summarize(def: ScheduleDef): string {
   const tzSuffix = def.localTimeZoneId ? ` (${def.localTimeZoneId})` : '';
@@ -377,5 +500,6 @@ export function combineSchedules(
     enabled: true,
     nextRunAt: bestMs != null ? new Date(bestMs).toISOString() : undefined,
     summary: enabled.map(summarize).join(' · '),
+    defs: enabled,
   };
 }
