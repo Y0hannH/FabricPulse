@@ -18,6 +18,7 @@ let state = {
   rangeStart: '',
   rangeEnd: '',
   lastRefreshed: '',
+  nextRefreshAt: '',
   isLoading: false,
 };
 
@@ -140,9 +141,11 @@ function postRange(/** @type {'setRange'|'ready'} */ type) {
   post({ type, rangeStart: start.toISOString(), rangeEnd: end.toISOString() });
 }
 
-// The now-line and the "Updated … · Next in …" label advance between refreshes.
+// The "Updated … · Next in …" label keeps counting between refreshes…
+setInterval(renderLastRefreshed, 15_000);
+
+// …and the now-line moves, planned runs turning into past ones.
 setInterval(() => {
-  renderLastRefreshed();
   // Redrawing closes the popover; don't pull it out from under someone reading it.
   if (dom.popover.classList.contains('hidden')) renderCalendar();
 }, 60_000);
@@ -175,7 +178,8 @@ function renderLastRefreshed() {
   if (state.isLoading && state.progress && state.progress.total > 0) {
     dom.lastRefreshed.textContent = `Fetching… ${state.progress.done}/${state.progress.total}`;
   } else if (state.lastRefreshed) {
-    dom.lastRefreshed.textContent = `Updated ${formatRelative(state.lastRefreshed)}`;
+    const next = state.nextRefreshAt ? ` · Next ${formatIn(state.nextRefreshAt)}` : '';
+    dom.lastRefreshed.textContent = `Updated ${formatRelative(state.lastRefreshed)}${next}`;
   } else {
     dom.lastRefreshed.textContent = '';
   }
@@ -802,6 +806,14 @@ function formatRelative(/** @type {string} */ iso) {
   const h = Math.floor(mins / 60);
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
+}
+
+function formatIn(/** @type {string} */ iso) {
+  const diff = new Date(iso).getTime() - Date.now();
+  if (diff <= 0) return 'now';
+  const mins = Math.ceil(diff / 60_000);
+  if (mins < 60) return `in ${mins}m`;
+  return `in ${Math.floor(mins / 60)}h`;
 }
 
 function formatDuration(/** @type {number} */ ms) {

@@ -297,6 +297,7 @@ export class DocumentationPanel {
       <li><strong>Frequent schedules</strong> — an item that runs every 30 minutes or less is drawn as a thin strip along the right edge of each day (first to last run) instead of hundreds of blocks. A recorded day shows its worst status, so one failure among 95 successes is visible.</li>
       <li><strong>Crowded times</strong> — when more blocks overlap than fit side by side (a nightly batch at 02:00), the rest are folded into a <kbd>+N</kbd> pill; click it to list them.</li>
       <li><strong>Details</strong> — click a block for its status, times, duration and schedule, with <kbd>Open in Fabric</kbd> and <kbd>History</kbd>.</li>
+      <li><strong>Auto refresh</strong> — like the dashboard, the calendar refreshes itself every <code>fabricPulse.pollingInterval</code> seconds while it is open (the toolbar shows <em>Updated … · Next in …</em>): the latest run of every item in scope is re-read, so a run that just started or finished appears without clicking anything. Schedules are re-read every 10 minutes, or immediately with <kbd>↺ Refresh</kbd>.</li>
       <li><strong>Load history</strong> — the past comes from the local run history. With 40 items or fewer in scope the full history is fetched on first load; for larger scopes only the latest run is, and <kbd>⬇ Load history</kbd> fetches the full history of the items currently shown.</li>
     </ul>
     <div class="callout">
