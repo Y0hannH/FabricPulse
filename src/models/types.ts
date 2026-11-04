@@ -368,6 +368,7 @@ export interface CalendarState {
   rangeStart: string; // ISO-8601 UTC, inclusive
   rangeEnd: string; // ISO-8601 UTC, exclusive
   lastRefreshed: string;
+  nextRefreshAt: string; // ISO-8601 UTC of the next background refresh
   isLoading: boolean;
   progress?: { done: number; total: number };
   auth?: { phase: 'pending' | 'failed'; message?: string };
