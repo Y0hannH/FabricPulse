@@ -8,6 +8,7 @@
 const js = require('@eslint/js');
 const tsPlugin = require('@typescript-eslint/eslint-plugin');
 const tsParser = require('@typescript-eslint/parser');
+const simpleImportSort = require('eslint-plugin-simple-import-sort');
 
 module.exports = [
   // Was `ignorePatterns`. src/webview is plain browser JS (its own globals and
@@ -23,9 +24,13 @@ module.exports = [
       parser: tsParser,
       ecmaVersion: 2020,
       sourceType: 'module',
+      parserOptions: {
+        project: './tsconfig.json',
+        tsconfigRootDir: __dirname,
+      },
     },
 
-    plugins: { '@typescript-eslint': tsPlugin },
+    plugins: { '@typescript-eslint': tsPlugin, 'simple-import-sort': simpleImportSort },
 
     rules: {
       // extends: ["eslint:recommended", "plugin:@typescript-eslint/recommended"]
@@ -44,6 +49,27 @@ module.exports = [
       // storageService is deliberate (sql.js WASM loader under esbuild).
       '@typescript-eslint/no-require-imports': 'off',
       'no-empty': ['error', { allowEmptyCatch: true }],
+
+      // Phase 1b hardening (HARMONISATION.md) — all autofixable via `eslint --fix`.
+      '@typescript-eslint/consistent-type-imports': 'warn',
+      'simple-import-sort/imports': 'warn',
+      'simple-import-sort/exports': 'warn',
+      // Redundant now that `private` already says it: see HARMONISATION.md decision
+      // to drop the `_` prefix from private class members. Does not touch the
+      // unused-parameter idiom (`argsIgnorePattern: '^_'` above), which is unrelated.
+      '@typescript-eslint/naming-convention': [
+        'warn',
+        {
+          selector: ['classProperty', 'classMethod', 'accessor', 'parameterProperty'],
+          modifiers: ['private'],
+          // UPPER_CASE stays allowed: this only bans the leading underscore, it
+          // isn't meant to relitigate the separate convention for constants
+          // (private static readonly VIEW_TYPE and friends).
+          format: ['camelCase', 'UPPER_CASE'],
+          leadingUnderscore: 'forbid',
+        },
+      ],
+      '@typescript-eslint/no-floating-promises': 'error',
     },
   },
 ];

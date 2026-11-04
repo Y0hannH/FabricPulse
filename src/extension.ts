@@ -1,14 +1,17 @@
 import * as vscode from 'vscode';
-import { DashboardPanel } from './panels/DashboardPanel';
-import { LakehousePanel } from './panels/LakehousePanel';
-import { DocumentationPanel } from './panels/DocumentationPanel';
-import { FabricApiService } from './services/fabricApi';
-import { AuthService } from './services/authService';
-import { StorageService } from './services/storageService';
+
+import type { Tenant } from './models/types';
+import { CalendarPanel } from './panels/calendarPanel';
+import { DashboardPanel } from './panels/dashboardPanel';
+import { DocumentationPanel } from './panels/documentationPanel';
+import { LakehousePanel } from './panels/lakehousePanel';
 import { AlertService } from './services/alertService';
-import { NotificationLog, NotificationEntry } from './services/notificationLog';
+import { AuthService } from './services/authService';
+import { FabricApiService } from './services/fabricApi';
+import type { NotificationEntry } from './services/notificationLog';
+import { NotificationLog } from './services/notificationLog';
+import { StorageService } from './services/storageService';
 import { NotificationsView } from './views/notificationsView';
-import { Tenant } from './models/types';
 
 // Services (initialized in activate, used across commands)
 let _storage: StorageService;
@@ -80,6 +83,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       startPolling();
     }),
 
+    // fabricPulse.openCalendar ──────────────────────────────────────────────
+    vscode.commands.registerCommand('fabricPulse.openCalendar', () => {
+      CalendarPanel.createOrShow(
+        context.extensionUri,
+        fabricApi,
+        _storage,
+        context,
+        notificationLog,
+      );
+    }),
+
     // fabricPulse.openLakehouses ────────────────────────────────────────────
     vscode.commands.registerCommand('fabricPulse.openLakehouses', () => {
       LakehousePanel.createOrShow(
@@ -149,6 +163,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         LakehousePanel.currentPanel.reloadTenants();
         await LakehousePanel.currentPanel.refresh();
       }
+      if (CalendarPanel.currentPanel) {
+        CalendarPanel.currentPanel.reloadTenants();
+        await CalendarPanel.currentPanel.refresh();
+      }
     }),
 
     // fabricPulse.exportHistory ────────────────────────────────────────────
@@ -173,6 +191,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (DashboardPanel.currentPanel) {
         await DashboardPanel.currentPanel.refresh();
       }
+      CalendarPanel.currentPanel?.redraw();
     }),
 
     // Internal: open history for a specific pipeline ────────────────────────
@@ -181,7 +200,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       // Try to reconstruct a Pipeline object from storage so we can open HistoryPanel
       const lastRun = _storage.getLastRun(pipelineId);
       if (lastRun) {
-        const { HistoryPanel: HP } = await import('./panels/HistoryPanel');
+        const { HistoryPanel: HP } = await import('./panels/historyPanel');
         HP.createOrShow(
           context.extensionUri,
           {

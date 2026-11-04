@@ -1,5 +1,10 @@
 import * as vscode from 'vscode';
-import { NotificationEntry, NotificationLevel, NotificationLog } from '../services/notificationLog';
+
+import type {
+  NotificationEntry,
+  NotificationLevel,
+  NotificationLog,
+} from '../services/notificationLog';
 
 const ICONS: Record<NotificationLevel, vscode.ThemeIcon> = {
   error: new vscode.ThemeIcon('error', new vscode.ThemeColor('charts.red')),
@@ -27,51 +32,51 @@ export class NotificationsView
 {
   static readonly VIEW_ID = 'fabricpulse.notificationsView';
 
-  private readonly _onDidChangeTreeData = new vscode.EventEmitter<void>();
-  readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+  private readonly treeDataEmitter = new vscode.EventEmitter<void>();
+  readonly onDidChangeTreeData = this.treeDataEmitter.event;
 
-  private readonly _view: vscode.TreeView<NotificationEntry>;
-  private readonly _disposables: vscode.Disposable[] = [];
+  private readonly view: vscode.TreeView<NotificationEntry>;
+  private readonly disposables: vscode.Disposable[] = [];
 
-  constructor(private readonly _log: NotificationLog) {
-    this._view = vscode.window.createTreeView(NotificationsView.VIEW_ID, {
+  constructor(private readonly log: NotificationLog) {
+    this.view = vscode.window.createTreeView(NotificationsView.VIEW_ID, {
       treeDataProvider: this,
     });
-    this._disposables.push(
-      this._view,
-      this._onDidChangeTreeData,
-      _log.onDidChange(() => {
-        this._onDidChangeTreeData.fire();
-        this._syncBadge();
+    this.disposables.push(
+      this.view,
+      this.treeDataEmitter,
+      log.onDidChange(() => {
+        this.treeDataEmitter.fire();
+        this.syncBadge();
       }),
       // Opening the view is what "reading" them means.
-      this._view.onDidChangeVisibility((e) => {
-        if (e.visible) _log.markAllRead();
+      this.view.onDidChangeVisibility((e) => {
+        if (e.visible) log.markAllRead();
       }),
     );
-    this._syncBadge();
+    this.syncBadge();
   }
 
   static formatForClipboard(e: NotificationEntry): string {
     return `[${formatAt(e.at)}] ${e.level.toUpperCase()} ${e.source}: ${e.message}`;
   }
 
-  private _syncBadge(): void {
+  private syncBadge(): void {
     // A notification that lands while the list is on screen is read already.
     // markAllRead fires onDidChange, which calls back in here with unread = 0.
-    if (this._view.visible && this._log.unreadCount > 0) {
-      this._log.markAllRead();
+    if (this.view.visible && this.log.unreadCount > 0) {
+      this.log.markAllRead();
       return;
     }
-    const n = this._log.unreadCount;
-    this._view.badge =
+    const n = this.log.unreadCount;
+    this.view.badge =
       n > 0
         ? { value: n, tooltip: `${n} unread FabricPulse notification${n > 1 ? 's' : ''}` }
         : undefined;
   }
 
   getChildren(element?: NotificationEntry): NotificationEntry[] {
-    return element ? [] : [...this._log.entries];
+    return element ? [] : [...this.log.entries];
   }
 
   getTreeItem(e: NotificationEntry): vscode.TreeItem {
@@ -91,7 +96,7 @@ export class NotificationsView
   }
 
   dispose(): void {
-    this._disposables.forEach((d) => d.dispose());
-    this._disposables.length = 0;
+    this.disposables.forEach((d) => d.dispose());
+    this.disposables.length = 0;
   }
 }

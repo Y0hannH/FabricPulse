@@ -3,7 +3,7 @@
 > Real-time pulse of your Microsoft Fabric pipelines — right inside VS Code.
 
 ![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.85-007ACC?style=flat-square&logo=visualstudiocode)
-![Version](https://img.shields.io/badge/Version-1.11.0-blue?style=flat-square)
+![Version](https://img.shields.io/badge/Version-1.12.0-blue?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-00B4D8?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-In%20Development-orange?style=flat-square)
 
@@ -22,6 +22,7 @@ You choose which pipelines matter. FabricPulse watches them, stores their histor
 | | Feature | Description |
 |---|---|---|
 | 📋 | **Dashboard** | Overview of all your pipelines with color-coded status, live filtering by workspace and name |
+| 📅 | **Calendar** | Everything that runs, on an Outlook-style week/day calendar with the dashboard's filters: recorded runs from start to end, upcoming scheduled runs up to the item's average duration |
 | ⭐ | **Favorites** | Pin key pipelines. "Favorites only" view — loaded first on startup |
 | 📊 | **History** | Duration chart, success rate, run table — stored locally in SQLite |
 | 🔔 | **Alerts** | Native VS Code notifications on failure or threshold breach. Configurable daily report |
@@ -91,6 +92,7 @@ npm run compile
 | Command | Description |
 |---|---|
 | `fabricPulse.openDashboard` | Open the main dashboard |
+| `fabricPulse.openCalendar` | Open the calendar of past and upcoming runs |
 | `fabricPulse.openLakehouses` | Open the Lakehouse panel |
 | `fabricPulse.openDocumentation` | Open the built-in documentation page |
 | `fabricPulse.addTenant` | Add an Azure tenant |

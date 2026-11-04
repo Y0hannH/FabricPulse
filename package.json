@@ -2,7 +2,7 @@
   "name": "fabricpulse",
   "displayName": "FabricPulse",
   "description": "Real-time Microsoft Fabric pipeline monitor for VS Code",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "publisher": "evolve-data",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -60,7 +60,7 @@
     "viewsWelcome": [
       {
         "view": "fabricpulse.launchView",
-        "contents": "⚡ Monitor your Microsoft Fabric data pipelines in real time.\n\n[$(pulse) Open Dashboard](command:fabricPulse.openDashboard)\n\n[$(database) Open Lakehouses](command:fabricPulse.openLakehouses)\n\n[$(add) Add Tenant](command:fabricPulse.addTenant)\n\n[$(trash) Clear History](command:fabricPulse.clearHistory)\n\n[$(book) Open Documentation](command:fabricPulse.openDocumentation)"
+        "contents": "⚡ Monitor your Microsoft Fabric data pipelines in real time.\n\n[$(pulse) Open Dashboard](command:fabricPulse.openDashboard)\n\n[$(calendar) Open Calendar](command:fabricPulse.openCalendar)\n\n[$(database) Open Lakehouses](command:fabricPulse.openLakehouses)\n\n[$(add) Add Tenant](command:fabricPulse.addTenant)\n\n[$(trash) Clear History](command:fabricPulse.clearHistory)\n\n[$(book) Open Documentation](command:fabricPulse.openDocumentation)"
       },
       {
         "view": "fabricpulse.notificationsView",
@@ -72,6 +72,11 @@
         "command": "fabricPulse.openDashboard",
         "title": "FabricPulse: Open Dashboard",
         "icon": "$(pulse)"
+      },
+      {
+        "command": "fabricPulse.openCalendar",
+        "title": "FabricPulse: Open Calendar",
+        "icon": "$(calendar)"
       },
       {
         "command": "fabricPulse.openLakehouses",
@@ -115,6 +120,9 @@
       "commandPalette": [
         {
           "command": "fabricPulse.openDashboard"
+        },
+        {
+          "command": "fabricPulse.openCalendar"
         },
         {
           "command": "fabricPulse.openLakehouses"
@@ -246,6 +254,7 @@
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.27.3",
     "eslint": "^10.0.3",
+    "eslint-plugin-simple-import-sort": "^14.0.0",
     "prettier": "^3.9.7",
     "sharp": "^0.34.5",
     "typescript": "^5.3.3"

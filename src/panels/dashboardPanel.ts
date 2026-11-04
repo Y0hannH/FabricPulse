@@ -1,24 +1,25 @@
-import * as vscode from 'vscode';
-import * as path from 'path';
-import * as fs from 'fs';
 import * as crypto from 'crypto';
-import { FabricApiService } from '../services/fabricApi';
-import { StorageService } from '../services/storageService';
-import { AlertService } from '../services/alertService';
-import { AuthState } from '../services/authService';
-import { NotificationLog } from '../services/notificationLog';
-import { ScheduleInfo } from '../services/scheduleService';
-import {
-  Tenant,
-  Workspace,
-  PipelineWithStatus,
-  PipelineRun,
+import * as fs from 'fs';
+import * as path from 'path';
+import * as vscode from 'vscode';
+
+import type {
   DashboardState,
-  WebviewToExtMsg,
   ExtToDashMsg,
-  ItemType,
   Favorite,
+  ItemType,
+  PipelineRun,
+  PipelineWithStatus,
+  Tenant,
+  WebviewToExtMsg,
+  Workspace,
 } from '../models/types';
+import type { AlertService } from '../services/alertService';
+import type { AuthState } from '../services/authService';
+import type { FabricApiService } from '../services/fabricApi';
+import type { NotificationLog } from '../services/notificationLog';
+import type { ScheduleInfo } from '../services/scheduleService';
+import type { StorageService } from '../services/storageService';
 
 // Utility ─────────────────────────────────────────────────────────────────────
 
@@ -49,44 +50,44 @@ export class DashboardPanel {
   public static currentPanel: DashboardPanel | undefined;
   private static readonly VIEW_TYPE = 'fabricPulseDashboard';
 
-  private readonly _panel: vscode.WebviewPanel;
-  private readonly _disposables: vscode.Disposable[] = [];
+  private readonly panel: vscode.WebviewPanel;
+  private readonly disposables: vscode.Disposable[] = [];
 
   // Panel state
-  private _tenants: Tenant[] = [];
-  private _currentTenantId = '';
-  private _workspaces: Workspace[] = [];
-  private _pipelines: PipelineWithStatus[] = [];
-  private _selectedWorkspaceId = '';
-  private _lastRefreshed = '';
-  private _nextRefreshAt = '';
-  private _isFromCache = false;
-  private _isLoading = false;
-  private _batchProgress: { done: number; total: number } | undefined = undefined;
-  private _disposed = false;
-  private _favoritesOnlyMode = false;
+  private tenants: Tenant[] = [];
+  private currentTenantId = '';
+  private workspaces: Workspace[] = [];
+  private pipelines: PipelineWithStatus[] = [];
+  private selectedWorkspaceId = '';
+  private lastRefreshed = '';
+  private nextRefreshAt = '';
+  private isFromCache = false;
+  private isLoading = false;
+  private batchProgress: { done: number; total: number } | undefined = undefined;
+  private disposed = false;
+  private favoritesOnlyMode = false;
   /** Whether the one-time "default to favorites-only when favorites exist" rule
    *  has been applied. Mirrors the webview's auto-enable so the very first
    *  refresh only fetches favorites instead of enumerating every workspace. */
-  private _favoritesDefaultApplied = false;
+  private favoritesDefaultApplied = false;
 
   /** itemId → epoch ms of last live API fetch for runs.
    *  Cleared when the workspace or tenant changes so the first load is always live. */
-  private _runsFetchedAt = new Map<string, number>();
+  private runsFetchedAt = new Map<string, number>();
 
   /** itemId → last fetched schedule info. Kept across the cache/fetch phases of a
    *  refresh so the "Next Run" column doesn't flicker; cleared on tenant/workspace change. */
-  private _schedulesById = new Map<string, ScheduleInfo>();
+  private schedulesById = new Map<string, ScheduleInfo>();
 
   /** Epoch ms at which the in-progress refresh started — the watchdog reads it
    *  to tell a slow refresh from a stuck one. */
-  private _loadingStartedAt = 0;
+  private loadingStartedAt = 0;
   /** Incremented per refresh so a refresh released by the watchdog can no longer
    *  clobber the state of the one that replaced it. */
-  private _refreshSeq = 0;
+  private refreshSeq = 0;
   /** Latest auth phase, mirrored into the webview state as the re-auth banner. */
-  private _authState: { phase: 'pending' | 'failed'; message?: string } | undefined;
-  private _prewarmTimer: ReturnType<typeof setInterval> | undefined;
+  private authState: { phase: 'pending' | 'failed'; message?: string } | undefined;
+  private prewarmTimer: ReturnType<typeof setInterval> | undefined;
 
   // ─── Factory ────────────────────────────────────────────────────────────────
 
@@ -101,7 +102,7 @@ export class DashboardPanel {
     const column = vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One;
 
     if (DashboardPanel.currentPanel) {
-      DashboardPanel.currentPanel._panel.reveal(column);
+      DashboardPanel.currentPanel.panel.reveal(column);
       return DashboardPanel.currentPanel;
     }
 
@@ -133,62 +134,62 @@ export class DashboardPanel {
 
   private constructor(
     panel: vscode.WebviewPanel,
-    private readonly _extensionUri: vscode.Uri,
-    private readonly _fabricApi: FabricApiService,
-    private readonly _storage: StorageService,
-    private readonly _alertService: AlertService,
-    private readonly _context: vscode.ExtensionContext,
-    private readonly _notifications: NotificationLog,
+    private readonly extensionUri: vscode.Uri,
+    private readonly fabricApi: FabricApiService,
+    private readonly storage: StorageService,
+    private readonly alertService: AlertService,
+    private readonly context: vscode.ExtensionContext,
+    private readonly notifications: NotificationLog,
   ) {
-    this._panel = panel;
+    this.panel = panel;
 
     // Load persisted tenants
-    this._tenants = this._context.globalState.get<Tenant[]>('fabricPulse.tenants', []);
-    if (this._tenants.length > 0) {
-      this._currentTenantId = this._tenants[0].id;
+    this.tenants = this.context.globalState.get<Tenant[]>('fabricPulse.tenants', []);
+    if (this.tenants.length > 0) {
+      this.currentTenantId = this.tenants[0].id;
     }
 
-    this._panel.webview.html = this._buildHtml();
+    this.panel.webview.html = this.buildHtml();
 
-    this._panel.webview.onDidReceiveMessage(
-      (msg: WebviewToExtMsg) => this._handleMessage(msg),
+    this.panel.webview.onDidReceiveMessage(
+      (msg: WebviewToExtMsg) => this.handleMessage(msg),
       null,
-      this._disposables,
+      this.disposables,
     );
 
-    this._disposables.push(
-      this._fabricApi.auth.onDidChangeAuthState((state) => this._onAuthStateChange(state)),
+    this.disposables.push(
+      this.fabricApi.auth.onDidChangeAuthState((state) => this.onAuthStateChange(state)),
     );
 
     // Renew the token in the background, between polls. Because AuthService
     // renews well before expiry, a sign-in that turns out to be needed is
     // surfaced (banner + notification) while the current token still works —
     // instead of blocking the refresh that first hits the expired one.
-    this._prewarmTimer = setInterval(() => {
-      if (this._disposed || !this._currentTenantId) return;
-      void this._fabricApi.auth.prewarm(this._currentTenantId);
+    this.prewarmTimer = setInterval(() => {
+      if (this.disposed || !this.currentTenantId) return;
+      void this.fabricApi.auth.prewarm(this.currentTenantId);
     }, TOKEN_PREWARM_MS);
 
-    this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+    this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
   }
 
   /** Mirrors the auth phase into the webview and, on failure, raises a VS Code
    *  notification — the panel may well be in a background tab. */
-  private _onAuthStateChange(state: AuthState): void {
-    if (this._disposed || state.tenantId !== this._currentTenantId) return;
+  private onAuthStateChange(state: AuthState): void {
+    if (this.disposed || state.tenantId !== this.currentTenantId) return;
     // Healthy renewals are the common case — nothing to redraw when the banner
     // is already down.
-    if (state.phase === 'idle' && !this._authState) return;
+    if (state.phase === 'idle' && !this.authState) return;
 
-    const previous = this._authState?.phase;
+    const previous = this.authState?.phase;
 
-    this._authState =
+    this.authState =
       state.phase === 'idle' ? undefined : { phase: state.phase, message: state.message };
 
     // Only on the transition into 'failed', so a tenant that keeps failing
     // doesn't produce a notification per refresh.
     if (state.phase === 'failed' && previous !== 'failed') {
-      this._notifications.add(
+      this.notifications.add(
         'warning',
         'Auth',
         `Sign-in required — ${state.message ?? 'the session has expired.'}`,
@@ -199,73 +200,73 @@ export class DashboardPanel {
           'Sign in',
         )
         .then((choice) => {
-          if (choice === 'Sign in') void this._reauthenticate();
+          if (choice === 'Sign in') void this.reauthenticate();
         });
     }
 
-    this._postState();
+    this.postState();
   }
 
   /** Discards the credential and acquires a fresh one, then reloads. Behind the
    *  banner's "Sign in" button and the notification action. */
-  private async _reauthenticate(): Promise<void> {
-    if (!this._currentTenantId) return;
+  private async reauthenticate(): Promise<void> {
+    if (!this.currentTenantId) return;
 
-    this._authState = { phase: 'pending', message: 'Signing in…' };
-    this._postState();
+    this.authState = { phase: 'pending', message: 'Signing in…' };
+    this.postState();
 
     try {
-      await this._fabricApi.auth.signIn(this._currentTenantId);
-      this._authState = undefined;
-      this._post({ type: 'toast', message: 'Signed in to Microsoft Fabric.', level: 'success' });
+      await this.fabricApi.auth.signIn(this.currentTenantId);
+      this.authState = undefined;
+      this.post({ type: 'toast', message: 'Signed in to Microsoft Fabric.', level: 'success' });
       await this.refresh(true);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      this._authState = { phase: 'failed', message };
-      this._post({ type: 'toast', message: `Sign-in failed: ${message}`, level: 'error' });
-      this._postState();
+      this.authState = { phase: 'failed', message };
+      this.post({ type: 'toast', message: `Sign-in failed: ${message}`, level: 'error' });
+      this.postState();
     }
   }
 
   // ─── Public ──────────────────────────────────────────────────────────────────
 
   public setNextRefreshAt(iso: string): void {
-    this._nextRefreshAt = iso;
-    this._postState();
+    this.nextRefreshAt = iso;
+    this.postState();
   }
 
   public async refresh(force = false, initialLoad = false): Promise<void> {
-    if (this._isLoading) {
+    if (this.isLoading) {
       // Debounce concurrent refreshes — unless the flag is stale. A refresh that
       // hung (typically on an expired token) used to leave it set for good,
       // which silently swallowed every later refresh, the Refresh button
       // included. Past STUCK_REFRESH_MS the flag is released and this refresh
-      // proceeds; _refreshSeq keeps the abandoned one from writing state.
-      if (Date.now() - this._loadingStartedAt < STUCK_REFRESH_MS) return;
+      // proceeds; refreshSeq keeps the abandoned one from writing state.
+      if (Date.now() - this.loadingStartedAt < STUCK_REFRESH_MS) return;
       console.warn('[FabricPulse] Previous refresh never completed — releasing the loading flag');
-      this._isLoading = false;
+      this.isLoading = false;
     }
 
-    if (!this._currentTenantId) {
-      this._postState();
+    if (!this.currentTenantId) {
+      this.postState();
       return;
     }
 
     // First refresh: default to favorites-only when the tenant has favorites, so
     // the initial (forced) load only refreshes those instead of every workspace.
     // Mirrors the webview's auto-enable, but is known *before* the fetch starts.
-    if (!this._favoritesDefaultApplied) {
-      this._favoritesDefaultApplied = true;
-      const favs = this._storage.getFavorites().filter((f) => f.tenantId === this._currentTenantId);
-      if (favs.length > 0) this._favoritesOnlyMode = true;
+    if (!this.favoritesDefaultApplied) {
+      this.favoritesDefaultApplied = true;
+      const favs = this.storage.getFavorites().filter((f) => f.tenantId === this.currentTenantId);
+      if (favs.length > 0) this.favoritesOnlyMode = true;
     }
 
-    this._isLoading = true;
-    this._loadingStartedAt = Date.now();
-    const seq = ++this._refreshSeq;
+    this.isLoading = true;
+    this.loadingStartedAt = Date.now();
+    const seq = ++this.refreshSeq;
     /** False once a later refresh has taken over — this one must stop writing state. */
-    const isCurrent = () => seq === this._refreshSeq;
-    this._postState();
+    const isCurrent = () => seq === this.refreshSeq;
+    this.postState();
 
     const cfg = vscode.workspace.getConfiguration('fabricPulse');
     const blacklist = cfg.get<string[]>('blacklistedWorkspaces', []).map((s) => s.toLowerCase());
@@ -279,40 +280,40 @@ export class DashboardPanel {
       // refreshes just the favorites (live) instead of enumerating every
       // workspace. The manual Refresh button (initialLoad=false) still does a
       // full refresh so the user can always force-update every item.
-      if (!this._selectedWorkspaceId && (!force || (initialLoad && this._favoritesOnlyMode))) {
-        const cachedWorkspaces = this._storage.getKnownWorkspaces(this._currentTenantId);
+      if (!this.selectedWorkspaceId && (!force || (initialLoad && this.favoritesOnlyMode))) {
+        const cachedWorkspaces = this.storage.getKnownWorkspaces(this.currentTenantId);
 
         if (cachedWorkspaces.length > 0) {
           // Cache is populated — rebuild the view entirely from SQLite, zero API calls
-          this._workspaces = cachedWorkspaces
+          this.workspaces = cachedWorkspaces
             .filter((ws) => !isBlacklisted(ws))
             .map((ws) => ({
               ...ws,
-              isFavorite: this._storage.isWorkspaceFavorite(ws.id),
+              isFavorite: this.storage.isWorkspaceFavorite(ws.id),
             }));
 
-          const tenantFavorites = this._storage
+          const tenantFavorites = this.storage
             .getFavorites()
-            .filter((f) => f.tenantId === this._currentTenantId);
+            .filter((f) => f.tenantId === this.currentTenantId);
 
           // getKnownWorkspaces derives from pipeline_runs, so the workspace of a
           // favorite that has never run is missing from the picker. Add it from
           // the name stored when the item was starred.
           for (const fav of tenantFavorites) {
-            if (this._workspaces.some((w) => w.id === fav.workspaceId)) continue;
+            if (this.workspaces.some((w) => w.id === fav.workspaceId)) continue;
             const ws = {
               id: fav.workspaceId,
               displayName: fav.workspaceName ?? fav.workspaceId,
-              tenantId: this._currentTenantId,
+              tenantId: this.currentTenantId,
             };
             if (isBlacklisted(ws)) continue;
-            this._workspaces.push({ ...ws, isFavorite: this._storage.isWorkspaceFavorite(ws.id) });
+            this.workspaces.push({ ...ws, isFavorite: this.storage.isWorkspaceFavorite(ws.id) });
           }
 
-          const cachedItems = this._storage.getKnownPipelines(this._currentTenantId);
-          this._pipelines = cachedItems.map((p) => {
-            const fav = this._storage.getFavorite(p.id);
-            const localRun = this._storage.getLastRun(p.id);
+          const cachedItems = this.storage.getKnownPipelines(this.currentTenantId);
+          this.pipelines = cachedItems.map((p) => {
+            const fav = this.storage.getFavorite(p.id);
+            const localRun = this.storage.getLastRun(p.id);
             const lastRun: PipelineRun | undefined = localRun
               ? {
                   id: String(localRun.id),
@@ -325,8 +326,8 @@ export class DashboardPanel {
                   errorMessage: localRun.errorMessage,
                 }
               : undefined;
-            const { rate } = this._storage.getSuccessRate(p.id, 7);
-            const durStats = this._storage.getDurationStats(p.id);
+            const { rate } = this.storage.getSuccessRate(p.id, 7);
+            const durStats = this.storage.getDurationStats(p.id);
             return {
               ...p,
               itemType: (p.itemType ?? 'pipeline') as ItemType,
@@ -338,8 +339,8 @@ export class DashboardPanel {
               isFavorite: !!fav,
               alertEnabled: fav?.alertEnabled ?? false,
               durationThresholdMs: fav?.durationThresholdMs,
-              cachedRunCount: this._storage.getRunCount(p.id),
-              ...this._scheduleFields(p.id),
+              cachedRunCount: this.storage.getRunCount(p.id),
+              ...this.scheduleFields(p.id),
             };
           });
 
@@ -348,33 +349,33 @@ export class DashboardPanel {
           // invisible until its first run landed. Show it as a row with empty
           // statistics — it is starred, so the user expects to see it.
           const seenIds = new Set(cachedItems.map((p) => p.id));
-          const knownWsIds = new Set(this._workspaces.map((w) => w.id));
+          const knownWsIds = new Set(this.workspaces.map((w) => w.id));
           for (const fav of tenantFavorites) {
             if (seenIds.has(fav.pipelineId)) continue;
             if (!knownWsIds.has(fav.workspaceId)) continue; // workspace blacklisted
-            this._pipelines.push(this._favoriteRow(fav));
+            this.pipelines.push(this.favoriteRow(fav));
           }
 
-          this._lastRefreshed = new Date().toISOString();
-          this._isFromCache = true;
+          this.lastRefreshed = new Date().toISOString();
+          this.isFromCache = true;
 
-          if (!this._favoritesOnlyMode) {
+          if (!this.favoritesOnlyMode) {
             // Pure cache mode — no API calls
-            await this._alertService.checkAlerts(this._pipelines);
+            await this.alertService.checkAlerts(this.pipelines);
             return; // done — no API calls made
           }
 
           // Favorites-only mode: show cache immediately, then refresh only stale favorites
-          this._postState();
+          this.postState();
 
           const pollingMs = cfg.get<number>('pollingInterval', 60) * 1000;
           const favorites = tenantFavorites;
-          const wsMap = new Map(this._workspaces.map((w) => [w.id, w]));
+          const wsMap = new Map(this.workspaces.map((w) => [w.id, w]));
           // A forced refresh re-fetches every favorite; otherwise only stale ones.
           const staleFavorites = force
             ? favorites
             : favorites.filter((f) => {
-                const lastFetched = this._runsFetchedAt.get(f.pipelineId) ?? 0;
+                const lastFetched = this.runsFetchedAt.get(f.pipelineId) ?? 0;
                 return Date.now() - lastFetched >= pollingMs;
               });
 
@@ -383,25 +384,25 @@ export class DashboardPanel {
             const batch = staleFavorites.slice(i, i + favBatchSize);
             await Promise.all(
               batch.map(async (fav) => {
-                const item = this._pipelines.find((p) => p.id === fav.pipelineId);
+                const item = this.pipelines.find((p) => p.id === fav.pipelineId);
                 let run: PipelineRun | undefined;
 
                 await Promise.all([
-                  this._fetchSchedule(
+                  this.fetchSchedule(
                     { id: fav.pipelineId, itemType: fav.itemType as ItemType | undefined },
                     fav.workspaceId,
                   ),
                   (async () => {
                     try {
-                      run = await this._fetchLastRun(
+                      run = await this.fetchLastRun(
                         fav.workspaceId,
                         fav.pipelineId,
                         fav.itemType as ItemType | undefined,
                       );
                       if (run) {
-                        this._storage.upsertRunsBatch([
+                        this.storage.upsertRunsBatch([
                           {
-                            tenantId: this._currentTenantId,
+                            tenantId: this.currentTenantId,
                             workspaceId: fav.workspaceId,
                             pipelineId: fav.pipelineId,
                             pipelineName: item?.displayName ?? fav.displayName ?? fav.pipelineId,
@@ -419,7 +420,7 @@ export class DashboardPanel {
                           },
                         ]);
                       }
-                      this._runsFetchedAt.set(fav.pipelineId, Date.now());
+                      this.runsFetchedAt.set(fav.pipelineId, Date.now());
                     } catch (err) {
                       console.warn(
                         `[FabricPulse] Could not fetch run for favorite ${fav.pipelineId}:`,
@@ -429,50 +430,50 @@ export class DashboardPanel {
                   })(),
                 ]);
 
-                const idx = this._pipelines.findIndex((p) => p.id === fav.pipelineId);
+                const idx = this.pipelines.findIndex((p) => p.id === fav.pipelineId);
                 if (idx !== -1) {
                   // Stats are re-read rather than carried over: a favorite that had
                   // no run until a moment ago would otherwise show "0 runs" next to
                   // the run it just fetched.
-                  const { rate } = this._storage.getSuccessRate(fav.pipelineId, 7);
-                  const durStats = this._storage.getDurationStats(fav.pipelineId);
-                  this._pipelines[idx] = {
-                    ...this._pipelines[idx],
+                  const { rate } = this.storage.getSuccessRate(fav.pipelineId, 7);
+                  const durStats = this.storage.getDurationStats(fav.pipelineId);
+                  this.pipelines[idx] = {
+                    ...this.pipelines[idx],
                     ...(run ? { lastRun: run } : {}),
                     successRate7d: rate,
                     avgDurationMs: durStats.avg,
                     maxDurationMs: durStats.max,
                     minDurationMs: durStats.min,
-                    cachedRunCount: this._storage.getRunCount(fav.pipelineId),
-                    ...this._scheduleFields(fav.pipelineId),
+                    cachedRunCount: this.storage.getRunCount(fav.pipelineId),
+                    ...this.scheduleFields(fav.pipelineId),
                   };
                 }
               }),
             );
           }
 
-          this._isFromCache = false;
-          this._lastRefreshed = new Date().toISOString();
-          await this._alertService.checkAlerts(this._pipelines);
+          this.isFromCache = false;
+          this.lastRefreshed = new Date().toISOString();
+          await this.alertService.checkAlerts(this.pipelines);
           return;
         }
         // Cache empty (first launch) → fall through to seed it via API
       }
 
       // ── Workspace selected (or cache empty on first launch) ───────────────
-      const rawWorkspaces = await this._fabricApi.getWorkspaces(this._currentTenantId);
+      const rawWorkspaces = await this.fabricApi.getWorkspaces(this.currentTenantId);
       const allWorkspaces = rawWorkspaces.filter((ws) => !isBlacklisted(ws));
       if (allWorkspaces.length < rawWorkspaces.length) {
         console.log(
           `[FabricPulse] Skipping ${rawWorkspaces.length - allWorkspaces.length} blacklisted workspace(s).`,
         );
       }
-      this._workspaces = allWorkspaces.map((ws) => ({
+      this.workspaces = allWorkspaces.map((ws) => ({
         ...ws,
-        isFavorite: this._storage.isWorkspaceFavorite(ws.id),
+        isFavorite: this.storage.isWorkspaceFavorite(ws.id),
       }));
       // Post workspaces immediately so the picker populates before items load
-      this._postState();
+      this.postState();
 
       const pollingMs = cfg.get<number>('pollingInterval', 60) * 1000;
       const batchSize = cfg.get<number>('batchSize', 5);
@@ -480,9 +481,9 @@ export class DashboardPanel {
       const batchThreshold = cfg.get<number>('batchThreshold', 10);
 
       const filteredWorkspaces = (
-        this._selectedWorkspaceId
-          ? this._workspaces.filter((w) => w.id === this._selectedWorkspaceId)
-          : this._workspaces
+        this.selectedWorkspaceId
+          ? this.workspaces.filter((w) => w.id === this.selectedWorkspaceId)
+          : this.workspaces
       ).sort((a, b) => (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0));
 
       // ── Phase 1: collect all items (pipelines + semantic models) with cached run data ──
@@ -502,7 +503,7 @@ export class DashboardPanel {
         let dbtJobs: import('../models/types').Pipeline[] = [];
 
         try {
-          pipelines = await this._fabricApi.getPipelines(this._currentTenantId, ws.id);
+          pipelines = await this.fabricApi.getPipelines(this.currentTenantId, ws.id);
         } catch (err) {
           console.warn(
             `[FabricPulse] Error fetching pipelines for workspace ${ws.displayName}:`,
@@ -510,7 +511,7 @@ export class DashboardPanel {
           );
         }
         try {
-          models = await this._fabricApi.getSemanticModels(this._currentTenantId, ws.id);
+          models = await this.fabricApi.getSemanticModels(this.currentTenantId, ws.id);
         } catch (err) {
           console.warn(
             `[FabricPulse] Error fetching semantic models for workspace ${ws.displayName}:`,
@@ -518,7 +519,7 @@ export class DashboardPanel {
           );
         }
         try {
-          notebooks = await this._fabricApi.getNotebooks(this._currentTenantId, ws.id);
+          notebooks = await this.fabricApi.getNotebooks(this.currentTenantId, ws.id);
         } catch (err) {
           console.warn(
             `[FabricPulse] Error fetching notebooks for workspace ${ws.displayName}:`,
@@ -526,7 +527,7 @@ export class DashboardPanel {
           );
         }
         try {
-          copyJobs = await this._fabricApi.getCopyJobs(this._currentTenantId, ws.id);
+          copyJobs = await this.fabricApi.getCopyJobs(this.currentTenantId, ws.id);
         } catch (err) {
           console.warn(
             `[FabricPulse] Error fetching copy jobs for workspace ${ws.displayName}:`,
@@ -534,7 +535,7 @@ export class DashboardPanel {
           );
         }
         try {
-          dbtJobs = await this._fabricApi.getDbtJobs(this._currentTenantId, ws.id);
+          dbtJobs = await this.fabricApi.getDbtJobs(this.currentTenantId, ws.id);
         } catch (err) {
           console.warn(
             `[FabricPulse] Error fetching dbt jobs for workspace ${ws.displayName}:`,
@@ -546,8 +547,8 @@ export class DashboardPanel {
 
         for (const p of allItems) {
           p.workspaceName = ws.displayName;
-          const fav = this._storage.getFavorite(p.id);
-          const localRun = this._storage.getLastRun(p.id);
+          const fav = this.storage.getFavorite(p.id);
+          const localRun = this.storage.getLastRun(p.id);
           const lastRun: PipelineRun | undefined = localRun
             ? {
                 id: String(localRun.id),
@@ -560,8 +561,8 @@ export class DashboardPanel {
                 errorMessage: localRun.errorMessage,
               }
             : undefined;
-          const { rate } = this._storage.getSuccessRate(p.id, 7);
-          const durStats = this._storage.getDurationStats(p.id);
+          const { rate } = this.storage.getSuccessRate(p.id, 7);
+          const durStats = this.storage.getDurationStats(p.id);
           allMeta.push({
             ws,
             pipeline: {
@@ -574,24 +575,24 @@ export class DashboardPanel {
               isFavorite: !!fav,
               alertEnabled: fav?.alertEnabled ?? false,
               durationThresholdMs: fav?.durationThresholdMs,
-              cachedRunCount: this._storage.getRunCount(p.id),
-              ...this._scheduleFields(p.id),
+              cachedRunCount: this.storage.getRunCount(p.id),
+              ...this.scheduleFields(p.id),
             },
           });
         }
       }
 
       // Show all items from cache immediately so the UI is populated
-      this._pipelines = allMeta.map((m) => m.pipeline);
-      this._isFromCache = true;
-      this._lastRefreshed = new Date().toISOString();
-      this._postState();
+      this.pipelines = allMeta.map((m) => m.pipeline);
+      this.isFromCache = true;
+      this.lastRefreshed = new Date().toISOString();
+      this.postState();
 
       // ── Phase 2: fetch fresh runs for stale items, in batches ─────────────
       const staleMeta = allMeta
         .filter((m) => {
-          if (this._favoritesOnlyMode && !m.pipeline.isFavorite) return false;
-          const lastFetched = this._runsFetchedAt.get(m.pipeline.id) ?? 0;
+          if (this.favoritesOnlyMode && !m.pipeline.isFavorite) return false;
+          const lastFetched = this.runsFetchedAt.get(m.pipeline.id) ?? 0;
           return Date.now() - lastFetched >= pollingMs;
         })
         .sort((a, b) => (b.pipeline.isFavorite ? 1 : 0) - (a.pipeline.isFavorite ? 1 : 0));
@@ -606,8 +607,8 @@ export class DashboardPanel {
 
         const batchNum = Math.floor(i / batchSize) + 1;
         if (useBatching) {
-          this._batchProgress = { done: batchNum - 1, total: totalBatches };
-          this._postState();
+          this.batchProgress = { done: batchNum - 1, total: totalBatches };
+          this.postState();
         }
 
         const batch = staleMeta.slice(i, i + batchSize);
@@ -617,14 +618,14 @@ export class DashboardPanel {
 
             // Runs and schedule are independent calls — fetch them concurrently.
             await Promise.all([
-              this._fetchSchedule(pipeline, ws.id),
+              this.fetchSchedule(pipeline, ws.id),
               (async () => {
                 try {
-                  run = await this._fetchLastRun(ws.id, pipeline.id, pipeline.itemType);
+                  run = await this.fetchLastRun(ws.id, pipeline.id, pipeline.itemType);
                   if (run) {
-                    this._storage.upsertRunsBatch([
+                    this.storage.upsertRunsBatch([
                       {
-                        tenantId: this._currentTenantId,
+                        tenantId: this.currentTenantId,
                         workspaceId: ws.id,
                         pipelineId: pipeline.id,
                         pipelineName: pipeline.displayName,
@@ -639,7 +640,7 @@ export class DashboardPanel {
                       },
                     ]);
                   }
-                  this._runsFetchedAt.set(pipeline.id, Date.now());
+                  this.runsFetchedAt.set(pipeline.id, Date.now());
                 } catch (err) {
                   console.warn(
                     `[FabricPulse] Could not fetch runs for ${pipeline.itemType ?? 'pipeline'} ${pipeline.displayName}:`,
@@ -649,49 +650,49 @@ export class DashboardPanel {
               })(),
             ]);
 
-            const idx = this._pipelines.findIndex((x) => x.id === pipeline.id);
+            const idx = this.pipelines.findIndex((x) => x.id === pipeline.id);
             if (idx !== -1) {
-              this._pipelines[idx] = {
-                ...this._pipelines[idx],
+              this.pipelines[idx] = {
+                ...this.pipelines[idx],
                 ...(run ? { lastRun: run } : {}),
-                ...this._scheduleFields(pipeline.id),
+                ...this.scheduleFields(pipeline.id),
               };
             }
           }),
         );
 
         if (useBatching) {
-          this._batchProgress = { done: batchNum, total: totalBatches };
+          this.batchProgress = { done: batchNum, total: totalBatches };
         }
-        this._postState();
+        this.postState();
       }
 
-      this._batchProgress = undefined;
-      this._isFromCache = false;
-      this._lastRefreshed = new Date().toISOString();
-      await this._alertService.checkAlerts(this._pipelines);
+      this.batchProgress = undefined;
+      this.isFromCache = false;
+      this.lastRefreshed = new Date().toISOString();
+      await this.alertService.checkAlerts(this.pipelines);
     } catch (err: unknown) {
       if (isCurrent()) {
         const msg = err instanceof Error ? err.message : String(err);
-        this._post({ type: 'toast', message: msg, level: 'error' });
+        this.post({ type: 'toast', message: msg, level: 'error' });
       }
     } finally {
       // A refresh the watchdog gave up on must not clear the flag of the one
       // now running, nor overwrite its state.
       if (isCurrent()) {
-        this._isLoading = false;
-        this._batchProgress = undefined;
-        this._postState();
+        this.isLoading = false;
+        this.batchProgress = undefined;
+        this.postState();
       }
     }
   }
 
   public reloadTenants(): void {
-    this._tenants = this._context.globalState.get<Tenant[]>('fabricPulse.tenants', []);
-    if (this._tenants.length > 0 && !this._currentTenantId) {
-      this._currentTenantId = this._tenants[0].id;
+    this.tenants = this.context.globalState.get<Tenant[]>('fabricPulse.tenants', []);
+    if (this.tenants.length > 0 && !this.currentTenantId) {
+      this.currentTenantId = this.tenants[0].id;
     }
-    this._postState();
+    this.postState();
   }
 
   // ─── Message handling ────────────────────────────────────────────────────────
@@ -699,7 +700,7 @@ export class DashboardPanel {
   /** Runtime validation of webview messages. TypeScript types are erased at
    *  runtime; the webview is a less-trusted context so we validate IDs and
    *  constrain freetext before processing. Returns false if the message is invalid. */
-  private _validateMsg(msg: WebviewToExtMsg): boolean {
+  private validateMsg(msg: WebviewToExtMsg): boolean {
     const fail = (reason: string) => {
       console.warn(`[FabricPulse] Invalid webview message (${msg.type}): ${reason}`);
       return false;
@@ -767,8 +768,8 @@ export class DashboardPanel {
     return true;
   }
 
-  private async _handleMessage(msg: WebviewToExtMsg): Promise<void> {
-    if (!this._validateMsg(msg)) return;
+  private async handleMessage(msg: WebviewToExtMsg): Promise<void> {
+    if (!this.validateMsg(msg)) return;
 
     switch (msg.type) {
       case 'ready':
@@ -780,43 +781,43 @@ export class DashboardPanel {
         break;
 
       case 'refresh':
-        this._runsFetchedAt.clear();
-        this._schedulesById.clear();
+        this.runsFetchedAt.clear();
+        this.schedulesById.clear();
         await this.refresh(true);
         break;
 
       case 'reauthenticate':
-        await this._reauthenticate();
+        await this.reauthenticate();
         break;
 
       case 'selectTenant':
-        this._currentTenantId = msg.tenantId;
-        this._authState = undefined; // auth state is per-tenant
-        this._workspaces = [];
-        this._pipelines = [];
-        this._selectedWorkspaceId = '';
-        this._runsFetchedAt.clear();
-        this._schedulesById.clear();
+        this.currentTenantId = msg.tenantId;
+        this.authState = undefined; // auth state is per-tenant
+        this.workspaces = [];
+        this.pipelines = [];
+        this.selectedWorkspaceId = '';
+        this.runsFetchedAt.clear();
+        this.schedulesById.clear();
         await this.refresh();
         break;
 
       case 'selectWorkspace':
-        this._selectedWorkspaceId = msg.workspaceId;
-        this._runsFetchedAt.clear(); // force live fetch on first load of a workspace
-        this._schedulesById.clear();
+        this.selectedWorkspaceId = msg.workspaceId;
+        this.runsFetchedAt.clear(); // force live fetch on first load of a workspace
+        this.schedulesById.clear();
         await this.refresh();
         break;
 
       case 'toggleWorkspaceFavorite': {
-        const isFavWs = this._storage.isWorkspaceFavorite(msg.workspaceId);
+        const isFavWs = this.storage.isWorkspaceFavorite(msg.workspaceId);
         if (isFavWs) {
-          this._storage.removeWorkspaceFavorite(msg.workspaceId);
+          this.storage.removeWorkspaceFavorite(msg.workspaceId);
         } else {
-          this._storage.addWorkspaceFavorite(msg.workspaceId);
+          this.storage.addWorkspaceFavorite(msg.workspaceId);
         }
-        const ws = this._workspaces.find((w) => w.id === msg.workspaceId);
+        const ws = this.workspaces.find((w) => w.id === msg.workspaceId);
         if (ws) ws.isFavorite = !isFavWs;
-        this._postState();
+        this.postState();
         break;
       }
 
@@ -830,13 +831,13 @@ export class DashboardPanel {
             vscode.ConfigurationTarget.Global,
           );
         }
-        this._workspaces = this._workspaces.filter((w) => w.id !== msg.workspaceId);
-        if (this._selectedWorkspaceId === msg.workspaceId) {
-          this._selectedWorkspaceId = '';
+        this.workspaces = this.workspaces.filter((w) => w.id !== msg.workspaceId);
+        if (this.selectedWorkspaceId === msg.workspaceId) {
+          this.selectedWorkspaceId = '';
         }
-        this._pipelines = this._pipelines.filter((p) => p.workspaceId !== msg.workspaceId);
-        this._postState();
-        this._post({
+        this.pipelines = this.pipelines.filter((p) => p.workspaceId !== msg.workspaceId);
+        this.postState();
+        this.post({
           type: 'toast',
           message: `"${msg.workspaceName}" ajouté à la blacklist`,
           level: 'info',
@@ -845,13 +846,13 @@ export class DashboardPanel {
       }
 
       case 'toggleFavorite': {
-        const isFav = this._storage.isFavorite(msg.pipelineId);
-        const pl = this._pipelines.find((p) => p.id === msg.pipelineId);
+        const isFav = this.storage.isFavorite(msg.pipelineId);
+        const pl = this.pipelines.find((p) => p.id === msg.pipelineId);
         if (isFav) {
-          this._storage.removeFavorite(msg.pipelineId);
+          this.storage.removeFavorite(msg.pipelineId);
         } else {
-          this._storage.addFavorite({
-            tenantId: this._currentTenantId,
+          this.storage.addFavorite({
+            tenantId: this.currentTenantId,
             workspaceId: msg.workspaceId,
             pipelineId: msg.pipelineId,
             alertEnabled: false,
@@ -868,18 +869,18 @@ export class DashboardPanel {
           pl.isFavorite = !isFav;
           if (isFav) pl.alertEnabled = false;
         }
-        this._postState();
+        this.postState();
         break;
       }
 
       case 'refreshPipeline': {
-        const target = this._pipelines.find((p) => p.id === msg.pipelineId);
+        const target = this.pipelines.find((p) => p.id === msg.pipelineId);
         if (!target) break;
         try {
           const itemType = (msg.itemType ?? target.itemType) as ItemType | undefined;
-          await this._refreshItemLastRun(msg.workspaceId, msg.pipelineId, itemType);
+          await this.refreshItemLastRun(msg.workspaceId, msg.pipelineId, itemType);
         } catch (err: unknown) {
-          this._post({
+          this.post({
             type: 'toast',
             message: err instanceof Error ? err.message : String(err),
             level: 'error',
@@ -889,20 +890,20 @@ export class DashboardPanel {
       }
 
       case 'fetchPipelineHistory': {
-        const target = this._pipelines.find((p) => p.id === msg.pipelineId);
+        const target = this.pipelines.find((p) => p.id === msg.pipelineId);
         if (!target) break;
-        this._post({
+        this.post({
           type: 'toast',
           message: `Fetching history for "${target.displayName}"…`,
           level: 'info',
         });
         try {
           const itemType = (msg.itemType ?? target.itemType) as ItemType | undefined;
-          const runs = await this._fetchAllRuns(msg.workspaceId, msg.pipelineId, itemType);
+          const runs = await this.fetchAllRuns(msg.workspaceId, msg.pipelineId, itemType);
           if (runs.length > 0) {
-            this._storage.upsertRunsBatch(
+            this.storage.upsertRunsBatch(
               runs.map((r) => ({
-                tenantId: this._currentTenantId,
+                tenantId: this.currentTenantId,
                 workspaceId: msg.workspaceId,
                 pipelineId: msg.pipelineId,
                 pipelineName: target.displayName,
@@ -917,13 +918,13 @@ export class DashboardPanel {
               })),
             );
           }
-          this._runsFetchedAt.set(msg.pipelineId, Date.now());
-          const { rate } = this._storage.getSuccessRate(msg.pipelineId, 7);
-          const durStats = this._storage.getDurationStats(msg.pipelineId);
-          const idx = this._pipelines.findIndex((p) => p.id === msg.pipelineId);
+          this.runsFetchedAt.set(msg.pipelineId, Date.now());
+          const { rate } = this.storage.getSuccessRate(msg.pipelineId, 7);
+          const durStats = this.storage.getDurationStats(msg.pipelineId);
+          const idx = this.pipelines.findIndex((p) => p.id === msg.pipelineId);
           if (idx !== -1) {
-            this._pipelines[idx] = {
-              ...this._pipelines[idx],
+            this.pipelines[idx] = {
+              ...this.pipelines[idx],
               lastRun: runs[0],
               successRate7d: rate,
               avgDurationMs: durStats.avg,
@@ -931,14 +932,14 @@ export class DashboardPanel {
               minDurationMs: durStats.min,
             };
           }
-          this._post({
+          this.post({
             type: 'toast',
             message: `${runs.length} runs fetched for "${target.displayName}"`,
             level: 'success',
           });
-          this._postState();
+          this.postState();
         } catch (err: unknown) {
-          this._post({
+          this.post({
             type: 'toast',
             message: err instanceof Error ? err.message : String(err),
             level: 'error',
@@ -948,21 +949,21 @@ export class DashboardPanel {
       }
 
       case 'rerunPipeline': {
-        const pipeline = this._pipelines.find((p) => p.id === msg.pipelineId);
+        const pipeline = this.pipelines.find((p) => p.id === msg.pipelineId);
         try {
           const itemType = (msg.itemType ?? pipeline?.itemType) as ItemType | undefined;
-          await this._triggerItem(msg.workspaceId, msg.pipelineId, itemType);
+          await this.triggerItem(msg.workspaceId, msg.pipelineId, itemType);
           const verb = itemType === 'semanticModel' ? 'refresh triggered' : 'triggered';
-          this._post({
+          this.post({
             type: 'toast',
             message: `"${pipeline?.displayName ?? msg.pipelineId}" ${verb}`,
             level: 'success',
           });
           // Targeted, staged refresh of just this item so the new run's status
           // appears within ~30s instead of waiting for the next polling cycle.
-          this._schedulePostTriggerRefresh(msg.workspaceId, msg.pipelineId, itemType);
+          this.schedulePostTriggerRefresh(msg.workspaceId, msg.pipelineId, itemType);
         } catch (err: unknown) {
-          this._post({
+          this.post({
             type: 'toast',
             message: err instanceof Error ? err.message : String(err),
             level: 'error',
@@ -973,7 +974,7 @@ export class DashboardPanel {
 
       case 'copyRunId':
         await vscode.env.clipboard.writeText(msg.runId);
-        this._post({
+        this.post({
           type: 'toast',
           message: 'Run ID copied to clipboard',
           level: 'success',
@@ -982,7 +983,7 @@ export class DashboardPanel {
         break;
 
       case 'openInFabric': {
-        // UUIDs already validated by _validateMsg
+        // UUIDs already validated by validateMsg
         let url: string;
         switch (msg.itemType ?? 'pipeline') {
           case 'semanticModel':
@@ -1008,7 +1009,7 @@ export class DashboardPanel {
       }
 
       case 'viewMonitor': {
-        // UUIDs already validated by _validateMsg.
+        // UUIDs already validated by validateMsg.
         // Deep-link to the last run's monitoring view when we have a run id;
         // fall back to the pipeline editor for never-run pipelines.
         const runId = msg.runId && isUuid(msg.runId) ? msg.runId : undefined;
@@ -1020,21 +1021,21 @@ export class DashboardPanel {
       }
 
       case 'viewHistory': {
-        const { HistoryPanel } = await import('./HistoryPanel');
-        const target = this._pipelines.find((p) => p.id === msg.pipelineId);
+        const { HistoryPanel } = await import('./historyPanel');
+        const target = this.pipelines.find((p) => p.id === msg.pipelineId);
         if (!target) break;
-        this._post({
+        this.post({
           type: 'toast',
           message: `Loading history for "${msg.pipelineName}"…`,
           level: 'info',
         });
         try {
           const itemType = (msg.itemType ?? target.itemType) as ItemType | undefined;
-          const runs = await this._fetchAllRuns(msg.workspaceId, msg.pipelineId, itemType);
+          const runs = await this.fetchAllRuns(msg.workspaceId, msg.pipelineId, itemType);
           if (runs.length > 0) {
-            this._storage.upsertRunsBatch(
+            this.storage.upsertRunsBatch(
               runs.map((r) => ({
-                tenantId: this._currentTenantId,
+                tenantId: this.currentTenantId,
                 workspaceId: msg.workspaceId,
                 pipelineId: msg.pipelineId,
                 pipelineName: msg.pipelineName,
@@ -1049,29 +1050,29 @@ export class DashboardPanel {
               })),
             );
           }
-          this._runsFetchedAt.set(msg.pipelineId, Date.now());
-          const { rate } = this._storage.getSuccessRate(msg.pipelineId, 7);
-          const durStats = this._storage.getDurationStats(msg.pipelineId);
-          const idx = this._pipelines.findIndex((p) => p.id === msg.pipelineId);
+          this.runsFetchedAt.set(msg.pipelineId, Date.now());
+          const { rate } = this.storage.getSuccessRate(msg.pipelineId, 7);
+          const durStats = this.storage.getDurationStats(msg.pipelineId);
+          const idx = this.pipelines.findIndex((p) => p.id === msg.pipelineId);
           if (idx !== -1) {
-            this._pipelines[idx] = {
-              ...this._pipelines[idx],
-              lastRun: runs[0] ?? this._pipelines[idx].lastRun,
+            this.pipelines[idx] = {
+              ...this.pipelines[idx],
+              lastRun: runs[0] ?? this.pipelines[idx].lastRun,
               successRate7d: rate,
               avgDurationMs: durStats.avg,
               maxDurationMs: durStats.max,
               minDurationMs: durStats.min,
             };
           }
-          this._postState();
+          this.postState();
         } catch (err: unknown) {
-          this._post({
+          this.post({
             type: 'toast',
             message: err instanceof Error ? err.message : String(err),
             level: 'error',
           });
         }
-        HistoryPanel.createOrShow(this._extensionUri, target, this._storage, this._notifications);
+        HistoryPanel.createOrShow(this.extensionUri, target, this.storage, this.notifications);
         break;
       }
 
@@ -1080,20 +1081,20 @@ export class DashboardPanel {
         break;
 
       case 'setFavoritesOnly':
-        this._favoritesOnlyMode = msg.enabled;
+        this.favoritesOnlyMode = msg.enabled;
         break;
 
       case 'exportHistory': {
-        const target = this._pipelines.find((p) => p.id === msg.pipelineId);
+        const target = this.pipelines.find((p) => p.id === msg.pipelineId);
         if (!target) break;
-        const csv = this._storage.exportRunsCsv(msg.pipelineId);
+        const csv = this.storage.exportRunsCsv(msg.pipelineId);
         const uri = await vscode.window.showSaveDialog({
           defaultUri: vscode.Uri.file(`${target.displayName}_history.csv`),
           filters: { 'CSV Files': ['csv'] },
         });
         if (uri) {
           fs.writeFileSync(uri.fsPath, csv, 'utf-8');
-          this._post({ type: 'toast', message: 'History exported', level: 'success', log: false });
+          this.post({ type: 'toast', message: 'History exported', level: 'success', log: false });
         }
         break;
       }
@@ -1103,42 +1104,42 @@ export class DashboardPanel {
   // ─── Item-type dispatch ─────────────────────────────────────────────────────
 
   /** Fetches the most recent run for an item, dispatching on its type. */
-  private _fetchLastRun(
+  private fetchLastRun(
     workspaceId: string,
     itemId: string,
     itemType?: ItemType,
   ): Promise<PipelineRun | undefined> {
     switch (itemType ?? 'pipeline') {
       case 'semanticModel':
-        return this._fabricApi.getLastSemanticModelRun(this._currentTenantId, workspaceId, itemId);
+        return this.fabricApi.getLastSemanticModelRun(this.currentTenantId, workspaceId, itemId);
       case 'notebook':
-        return this._fabricApi.getLastNotebookRun(this._currentTenantId, workspaceId, itemId);
+        return this.fabricApi.getLastNotebookRun(this.currentTenantId, workspaceId, itemId);
       case 'copyJob':
-        return this._fabricApi.getLastCopyJobRun(this._currentTenantId, workspaceId, itemId);
+        return this.fabricApi.getLastCopyJobRun(this.currentTenantId, workspaceId, itemId);
       case 'dbtJob':
-        return this._fabricApi.getLastDbtJobRun(this._currentTenantId, workspaceId, itemId);
+        return this.fabricApi.getLastDbtJobRun(this.currentTenantId, workspaceId, itemId);
       default:
-        return this._fabricApi.getLastPipelineRun(this._currentTenantId, workspaceId, itemId);
+        return this.fabricApi.getLastPipelineRun(this.currentTenantId, workspaceId, itemId);
     }
   }
 
   /** Fetches the full run history for an item, dispatching on its type. */
-  private _fetchAllRuns(
+  private fetchAllRuns(
     workspaceId: string,
     itemId: string,
     itemType?: ItemType,
   ): Promise<PipelineRun[]> {
     switch (itemType ?? 'pipeline') {
       case 'semanticModel':
-        return this._fabricApi.getSemanticModelRuns(this._currentTenantId, workspaceId, itemId);
+        return this.fabricApi.getSemanticModelRuns(this.currentTenantId, workspaceId, itemId);
       case 'notebook':
-        return this._fabricApi.getNotebookRuns(this._currentTenantId, workspaceId, itemId);
+        return this.fabricApi.getNotebookRuns(this.currentTenantId, workspaceId, itemId);
       case 'copyJob':
-        return this._fabricApi.getCopyJobRuns(this._currentTenantId, workspaceId, itemId);
+        return this.fabricApi.getCopyJobRuns(this.currentTenantId, workspaceId, itemId);
       case 'dbtJob':
-        return this._fabricApi.getDbtJobRuns(this._currentTenantId, workspaceId, itemId);
+        return this.fabricApi.getDbtJobRuns(this.currentTenantId, workspaceId, itemId);
       default:
-        return this._fabricApi.getPipelineRuns(this._currentTenantId, workspaceId, itemId);
+        return this.fabricApi.getPipelineRuns(this.currentTenantId, workspaceId, itemId);
     }
   }
 
@@ -1146,18 +1147,18 @@ export class DashboardPanel {
    *  dbt jobs (preview) have no REST API to trigger a run — the UI hides the
    *  rerun button for this type, but this throws a clear error as a safety net
    *  in case it's ever reached anyway. */
-  private _triggerItem(workspaceId: string, itemId: string, itemType?: ItemType): Promise<string> {
+  private triggerItem(workspaceId: string, itemId: string, itemType?: ItemType): Promise<string> {
     switch (itemType ?? 'pipeline') {
       case 'semanticModel':
-        return this._fabricApi.triggerSemanticModelRefresh(
-          this._currentTenantId,
+        return this.fabricApi.triggerSemanticModelRefresh(
+          this.currentTenantId,
           workspaceId,
           itemId,
         );
       case 'notebook':
-        return this._fabricApi.triggerNotebook(this._currentTenantId, workspaceId, itemId);
+        return this.fabricApi.triggerNotebook(this.currentTenantId, workspaceId, itemId);
       case 'copyJob':
-        return this._fabricApi.triggerCopyJob(this._currentTenantId, workspaceId, itemId);
+        return this.fabricApi.triggerCopyJob(this.currentTenantId, workspaceId, itemId);
       case 'dbtJob':
         return Promise.reject(
           new Error(
@@ -1165,7 +1166,7 @@ export class DashboardPanel {
           ),
         );
       default:
-        return this._fabricApi.triggerPipeline(this._currentTenantId, workspaceId, itemId);
+        return this.fabricApi.triggerPipeline(this.currentTenantId, workspaceId, itemId);
     }
   }
 
@@ -1174,20 +1175,20 @@ export class DashboardPanel {
    *  Used by the manual "refresh last run" action and by the staged
    *  post-trigger refresh. Throws on API error so callers can decide whether
    *  to surface it. */
-  private async _refreshItemLastRun(
+  private async refreshItemLastRun(
     workspaceId: string,
     itemId: string,
     itemType?: ItemType,
   ): Promise<void> {
-    const target = this._pipelines.find((p) => p.id === itemId);
+    const target = this.pipelines.find((p) => p.id === itemId);
     if (!target) return; // item no longer in view (tenant/workspace changed)
 
     const type = itemType ?? target.itemType;
-    const run = await this._fetchLastRun(workspaceId, itemId, type);
+    const run = await this.fetchLastRun(workspaceId, itemId, type);
     if (run) {
-      this._storage.upsertRunsBatch([
+      this.storage.upsertRunsBatch([
         {
-          tenantId: this._currentTenantId,
+          tenantId: this.currentTenantId,
           workspaceId,
           pipelineId: itemId,
           pipelineName: target.displayName,
@@ -1202,31 +1203,31 @@ export class DashboardPanel {
         },
       ]);
     }
-    this._runsFetchedAt.set(itemId, Date.now());
-    await this._fetchSchedule({ id: itemId, itemType: type }, workspaceId);
+    this.runsFetchedAt.set(itemId, Date.now());
+    await this.fetchSchedule({ id: itemId, itemType: type }, workspaceId);
 
-    const { rate } = this._storage.getSuccessRate(itemId, 7);
-    const durStats = this._storage.getDurationStats(itemId);
-    const idx = this._pipelines.findIndex((p) => p.id === itemId);
+    const { rate } = this.storage.getSuccessRate(itemId, 7);
+    const durStats = this.storage.getDurationStats(itemId);
+    const idx = this.pipelines.findIndex((p) => p.id === itemId);
     if (idx !== -1) {
-      this._pipelines[idx] = {
-        ...this._pipelines[idx],
+      this.pipelines[idx] = {
+        ...this.pipelines[idx],
         ...(run ? { lastRun: run } : {}),
         successRate7d: rate,
         avgDurationMs: durStats.avg,
         maxDurationMs: durStats.max,
         minDurationMs: durStats.min,
-        cachedRunCount: this._storage.getRunCount(itemId),
-        ...this._scheduleFields(itemId),
+        cachedRunCount: this.storage.getRunCount(itemId),
+        ...this.scheduleFields(itemId),
       };
     }
-    this._postState();
+    this.postState();
   }
 
   /** Schedules a few targeted re-fetches of an item's last run after it was
    *  triggered, so the new run's status shows up without waiting for the next
    *  polling cycle. Each tick is non-fatal and skipped if the panel is gone. */
-  private _schedulePostTriggerRefresh(
+  private schedulePostTriggerRefresh(
     workspaceId: string,
     itemId: string,
     itemType?: ItemType,
@@ -1236,8 +1237,8 @@ export class DashboardPanel {
     const delaysMs = [8_000, 30_000];
     for (const delay of delaysMs) {
       setTimeout(() => {
-        if (this._disposed) return;
-        this._refreshItemLastRun(workspaceId, itemId, itemType).catch((err) =>
+        if (this.disposed) return;
+        this.refreshItemLastRun(workspaceId, itemId, itemType).catch((err) =>
           console.warn(`[FabricPulse] post-trigger refresh failed for ${itemId}:`, err),
         );
       }, delay);
@@ -1248,7 +1249,7 @@ export class DashboardPanel {
 
   /** Fetches the schedule for an item and caches it. Non-fatal: on error it
    *  keeps any previously cached value rather than clearing the column. */
-  private async _fetchSchedule(
+  private async fetchSchedule(
     item: { id: string; itemType?: ItemType },
     workspaceId: string,
   ): Promise<void> {
@@ -1256,42 +1257,38 @@ export class DashboardPanel {
       let info;
       switch (item.itemType ?? 'pipeline') {
         case 'semanticModel':
-          info = await this._fabricApi.getSemanticModelSchedule(
-            this._currentTenantId,
+          info = await this.fabricApi.getSemanticModelSchedule(
+            this.currentTenantId,
             workspaceId,
             item.id,
           );
           break;
         case 'notebook':
-          info = await this._fabricApi.getNotebookSchedule(
-            this._currentTenantId,
+          info = await this.fabricApi.getNotebookSchedule(
+            this.currentTenantId,
             workspaceId,
             item.id,
           );
           break;
         case 'copyJob':
-          info = await this._fabricApi.getCopyJobSchedule(
-            this._currentTenantId,
+          info = await this.fabricApi.getCopyJobSchedule(
+            this.currentTenantId,
             workspaceId,
             item.id,
           );
           break;
         case 'dbtJob':
-          info = await this._fabricApi.getDbtJobSchedule(
-            this._currentTenantId,
-            workspaceId,
-            item.id,
-          );
+          info = await this.fabricApi.getDbtJobSchedule(this.currentTenantId, workspaceId, item.id);
           break;
         default:
-          info = await this._fabricApi.getPipelineSchedule(
-            this._currentTenantId,
+          info = await this.fabricApi.getPipelineSchedule(
+            this.currentTenantId,
             workspaceId,
             item.id,
           );
           break;
       }
-      if (info !== undefined) this._schedulesById.set(item.id, info);
+      if (info !== undefined) this.schedulesById.set(item.id, info);
     } catch (err) {
       console.warn(`[FabricPulse] schedule fetch failed for ${item.id}:`, err);
     }
@@ -1302,8 +1299,8 @@ export class DashboardPanel {
    *  from it; the names come from what was captured when it was starred.
    *  Statistics are left undefined rather than zeroed so the table renders "—"
    *  (nothing known) instead of "0%" (ran, never succeeded). */
-  private _favoriteRow(fav: Favorite): PipelineWithStatus {
-    const ws = this._workspaces.find((w) => w.id === fav.workspaceId);
+  private favoriteRow(fav: Favorite): PipelineWithStatus {
+    const ws = this.workspaces.find((w) => w.id === fav.workspaceId);
     return {
       id: fav.pipelineId,
       displayName: fav.displayName ?? fav.pipelineId,
@@ -1315,61 +1312,61 @@ export class DashboardPanel {
       alertEnabled: fav.alertEnabled,
       durationThresholdMs: fav.durationThresholdMs,
       cachedRunCount: 0,
-      ...this._scheduleFields(fav.pipelineId),
+      ...this.scheduleFields(fav.pipelineId),
     };
   }
 
   /** Schedule-derived fields for a pipeline row, read from the in-memory cache. */
-  private _scheduleFields(
+  private scheduleFields(
     itemId: string,
   ): Pick<PipelineWithStatus, 'nextRunAt' | 'scheduleSummary' | 'scheduleEnabled'> {
-    const s = this._schedulesById.get(itemId);
+    const s = this.schedulesById.get(itemId);
     return { nextRunAt: s?.nextRunAt, scheduleSummary: s?.summary, scheduleEnabled: s?.enabled };
   }
 
   // ─── State ──────────────────────────────────────────────────────────────────
 
-  private _postState(): void {
+  private postState(): void {
     const state: DashboardState = {
-      tenants: this._tenants,
-      currentTenantId: this._currentTenantId,
-      workspaces: this._workspaces,
-      pipelines: this._pipelines,
-      selectedWorkspaceId: this._selectedWorkspaceId,
-      lastRefreshed: this._lastRefreshed,
-      nextRefreshAt: this._nextRefreshAt,
-      isFromCache: this._isFromCache,
-      isLoading: this._isLoading,
-      batchProgress: this._batchProgress,
-      auth: this._authState,
+      tenants: this.tenants,
+      currentTenantId: this.currentTenantId,
+      workspaces: this.workspaces,
+      pipelines: this.pipelines,
+      selectedWorkspaceId: this.selectedWorkspaceId,
+      lastRefreshed: this.lastRefreshed,
+      nextRefreshAt: this.nextRefreshAt,
+      isFromCache: this.isFromCache,
+      isLoading: this.isLoading,
+      batchProgress: this.batchProgress,
+      auth: this.authState,
     };
-    this._post({ type: 'updateState', state });
+    this.post({ type: 'updateState', state });
   }
 
-  private _post(msg: ExtToDashMsg): void {
+  private post(msg: ExtToDashMsg): void {
     // Toasts fade out after a few seconds, so each one is also recorded — before
     // the disposed check, since one the user never got to see matters most.
     // Info toasts are progress chatter ("Loading history…") and aren't kept.
     if (msg.type === 'toast' && msg.level !== 'info' && msg.log !== false) {
-      this._notifications.add(msg.level, 'Dashboard', msg.message);
+      this.notifications.add(msg.level, 'Dashboard', msg.message);
     }
-    if (this._disposed) {
+    if (this.disposed) {
       return;
     }
-    this._panel.webview.postMessage(msg);
+    this.panel.webview.postMessage(msg);
   }
 
   // ─── HTML ────────────────────────────────────────────────────────────────────
 
-  private _buildHtml(): string {
-    const webviewDir = vscode.Uri.joinPath(this._extensionUri, 'src', 'webview');
+  private buildHtml(): string {
+    const webviewDir = vscode.Uri.joinPath(this.extensionUri, 'src', 'webview');
     const htmlPath = path.join(webviewDir.fsPath, 'dashboard.html');
     let html = fs.readFileSync(htmlPath, 'utf-8');
 
-    const cssUri = this._panel.webview.asWebviewUri(
+    const cssUri = this.panel.webview.asWebviewUri(
       vscode.Uri.joinPath(webviewDir, 'dashboard.css'),
     );
-    const jsUri = this._panel.webview.asWebviewUri(vscode.Uri.joinPath(webviewDir, 'dashboard.js'));
+    const jsUri = this.panel.webview.asWebviewUri(vscode.Uri.joinPath(webviewDir, 'dashboard.js'));
     const nonce = getNonce();
 
     const v = Date.now();
@@ -1377,7 +1374,7 @@ export class DashboardPanel {
       .replace(/\{\{CSS_URI\}\}/g, cssUri.toString() + '?v=' + v)
       .replace(/\{\{JS_URI\}\}/g, jsUri.toString() + '?v=' + v)
       .replace(/\{\{NONCE\}\}/g, nonce)
-      .replace(/\{\{WEBVIEW_CSP_SOURCE\}\}/g, this._panel.webview.cspSource);
+      .replace(/\{\{WEBVIEW_CSP_SOURCE\}\}/g, this.panel.webview.cspSource);
 
     return html;
   }
@@ -1385,14 +1382,14 @@ export class DashboardPanel {
   // ─── Dispose ─────────────────────────────────────────────────────────────────
 
   public dispose(): void {
-    this._disposed = true;
-    if (this._prewarmTimer !== undefined) {
-      clearInterval(this._prewarmTimer);
-      this._prewarmTimer = undefined;
+    this.disposed = true;
+    if (this.prewarmTimer !== undefined) {
+      clearInterval(this.prewarmTimer);
+      this.prewarmTimer = undefined;
     }
     DashboardPanel.currentPanel = undefined;
-    this._panel.dispose();
-    this._disposables.forEach((d) => d.dispose());
-    this._disposables.length = 0;
+    this.panel.dispose();
+    this.disposables.forEach((d) => d.dispose());
+    this.disposables.length = 0;
   }
 }

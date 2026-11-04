@@ -1,0 +1,325 @@
+/* Calendar view — loaded after dashboard.css, which provides the toolbar, filter pills,
+   buttons, badges, toast and auth banner. Only what is specific to the calendar is here. */
+
+:root {
+  --cal-hour-h:   48px;
+  --cal-gutter-w: 54px;
+}
+
+/* The calendar scrolls inside its own grid, not the page. */
+#main {
+  display:        flex;
+  flex-direction: column;
+  overflow:       hidden;
+}
+
+/* ── Navigation bar ──────────────────────────────────────────────────────────── */
+.cal-nav {
+  display:       flex;
+  align-items:   center;
+  gap:           8px;
+  padding:       6px 10px;
+  border-bottom: 1px solid var(--fp-border);
+  flex-shrink:   0;
+  flex-wrap:     wrap;
+}
+
+.btn-nav {
+  width:       26px;
+  padding:     0;
+  font-size:   15px;
+  line-height: 1;
+}
+
+.cal-title {
+  font-size:   14px;
+  font-weight: 600;
+  min-width:   180px;
+}
+
+.view-switch {
+  display:       flex;
+  border:        1px solid var(--fp-border);
+  border-radius: 3px;
+  overflow:      hidden;
+}
+.view-btn {
+  background:  transparent;
+  border:      none;
+  color:       var(--vscode-descriptionForeground, #888);
+  font-size:   11px;
+  padding:     2px 10px;
+  height:      22px;
+}
+.view-btn + .view-btn { border-left: 1px solid var(--fp-border); }
+.view-btn:hover  { color: var(--vscode-foreground, #ccc); }
+.view-btn.active {
+  background: rgba(110,118,129,0.25);
+  color:      var(--vscode-foreground, #ccc);
+}
+
+.cal-legend {
+  margin-left: auto;
+  display:     flex;
+  gap:         12px;
+  font-size:   11px;
+  color:       var(--vscode-descriptionForeground, #888);
+}
+.legend-swatch {
+  display:       inline-block;
+  width:         10px;
+  height:        10px;
+  border-radius: 2px;
+  margin-right:  4px;
+  vertical-align: -1px;
+}
+.sw-succeeded { background: var(--fp-green); }
+.sw-failed    { background: var(--fp-red); }
+.sw-inprogress { background: var(--fp-orange); }
+.sw-other     { background: var(--fp-grey); }
+.sw-planned   {
+  background: transparent;
+  border:     1px dashed var(--fp-blue);
+}
+
+/* ── Grid frame ──────────────────────────────────────────────────────────────── */
+.cal-wrap {
+  display:        flex;
+  flex-direction: column;
+  flex:           1;
+  min-height:     0;
+}
+
+.cal-head,
+.cal-grid {
+  display:               grid;
+  grid-template-columns: var(--cal-gutter-w) repeat(var(--cal-cols, 7), minmax(0, 1fr));
+}
+
+.cal-head {
+  flex-shrink:   0;
+  border-bottom: 1px solid var(--fp-border);
+  background:    var(--vscode-sideBar-background, #252526);
+}
+
+.day-head {
+  display:         flex;
+  flex-direction:  column;
+  align-items:     center;
+  padding:         4px 0 5px;
+  border-left:     1px solid var(--fp-border);
+  line-height:     1.3;
+}
+.day-head .dow {
+  font-size:      10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color:          var(--vscode-descriptionForeground, #888);
+}
+.day-head .dom { font-size: 15px; }
+.day-head.today .dow { color: var(--fp-blue); }
+.day-head.today .dom {
+  background:    var(--fp-blue);
+  color:         #fff;
+  border-radius: 10px;
+  padding:       0 7px;
+}
+
+.cal-scroll {
+  flex:       1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position:   relative;
+}
+
+.cal-grid {
+  position: relative;
+  height:   calc(24 * var(--cal-hour-h));
+}
+
+.cal-gutter { position: relative; }
+.hour-label {
+  position:    absolute;
+  right:       6px;
+  transform:   translateY(-50%);
+  font-size:   10px;
+  color:       var(--vscode-descriptionForeground, #888);
+  white-space: nowrap;
+}
+
+.day-col {
+  position:    relative;
+  border-left: 1px solid var(--fp-border);
+  /* One hairline per hour, a fainter one at the half hour. */
+  background-image:
+    linear-gradient(to bottom, transparent calc(50% - 0.5px), rgba(128,128,128,0.10) calc(50% - 0.5px), rgba(128,128,128,0.10) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+    linear-gradient(to bottom, transparent calc(100% - 1px), var(--fp-border) calc(100% - 1px));
+  background-size: 100% var(--cal-hour-h);
+}
+.day-col.today { background-color: rgba(77,156,230,0.05); }
+
+.now-line {
+  position:       absolute;
+  left:           0;
+  right:          0;
+  height:         2px;
+  background:     var(--fp-red);
+  z-index:        4;
+  pointer-events: none;
+}
+.now-line::before {
+  content:       '';
+  position:      absolute;
+  left:          -4px;
+  top:           -3px;
+  width:         8px;
+  height:        8px;
+  border-radius: 50%;
+  background:    var(--fp-red);
+}
+
+/* ── Event blocks ────────────────────────────────────────────────────────────── */
+.ev {
+  --ev-color: var(--fp-grey);
+  --ev-bg:    rgba(110,118,129,0.20);
+  position:      absolute;
+  z-index:       2;
+  overflow:      hidden;
+  padding:       1px 4px;
+  border-radius: 3px;
+  border-left:   3px solid var(--ev-color);
+  background:    var(--ev-bg);
+  color:         var(--vscode-foreground, #ccc);
+  font-size:     11px;
+  line-height:   1.25;
+  cursor:        pointer;
+}
+.ev:hover { filter: brightness(1.25); z-index: 5; }
+
+.ev-title {
+  display:       block;
+  font-weight:   600;
+  overflow:      hidden;
+  text-overflow: ellipsis;
+  white-space:   nowrap;
+}
+.ev-sub {
+  display:       block;
+  overflow:      hidden;
+  text-overflow: ellipsis;
+  white-space:   nowrap;
+  opacity:       0.75;
+  font-size:     10px;
+}
+/* Too short for a second line. */
+.ev-compact .ev-sub { display: none; }
+
+.ev-succeeded  { --ev-color: var(--fp-green);  --ev-bg: rgba(78,201,176,0.20); }
+.ev-failed     { --ev-color: var(--fp-red);    --ev-bg: rgba(241,76,76,0.22); }
+.ev-inprogress { --ev-color: var(--fp-orange); --ev-bg: rgba(229,164,0,0.22); }
+
+/* Upcoming runs: dashed and hatched, so an estimate never reads as a fact. */
+.ev-planned {
+  --ev-color: var(--fp-blue);
+  border:      1px dashed var(--ev-color);
+  border-left: 3px dashed var(--ev-color);
+  background:  repeating-linear-gradient(
+    45deg,
+    rgba(77,156,230,0.14) 0 6px,
+    rgba(77,156,230,0.05) 6px 12px
+  );
+}
+
+/* The regular blocks live in their own layer, so the lanes of frequent crons can sit
+   along the right edge without taking part in the side-by-side layout. */
+.day-events {
+  position: absolute;
+  top:      0;
+  bottom:   0;
+  left:     0;
+}
+
+/* A cron firing every few minutes: one strip per day, first run to last. */
+.band-strip {
+  position:      absolute;
+  z-index:       2;
+  width:         7px;
+  border-radius: 2px;
+  cursor:        pointer;
+}
+.band-strip:hover { filter: brightness(1.3); }
+.bs-succeeded  { background: var(--fp-green); }
+.bs-failed     { background: var(--fp-red); }
+.bs-inprogress { background: var(--fp-orange); }
+.bs-cancelled,
+.bs-queued,
+.bs-unknown    { background: var(--fp-grey); }
+.bs-planned {
+  border: 1px dashed var(--fp-purple);
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(177,128,215,0.45) 0 3px,
+    rgba(177,128,215,0.10) 3px 6px
+  );
+}
+
+/* "+N" standing in for the blocks that don't fit beside each other. */
+.ev-more {
+  position:      absolute;
+  z-index:       3;
+  padding:       1px 4px;
+  border-radius: 3px;
+  background:    var(--vscode-badge-background, #4d4d4d);
+  color:         var(--vscode-badge-foreground, #fff);
+  font-size:     10px;
+  font-weight:   600;
+  text-align:    center;
+  cursor:        pointer;
+  white-space:   nowrap;
+  overflow:      hidden;
+}
+.ev-more:hover { filter: brightness(1.2); }
+
+.cal-empty {
+  position:       absolute;
+  top:            24px;
+  left:           var(--cal-gutter-w);
+  right:          0;
+  text-align:     center;
+  color:          var(--vscode-descriptionForeground, #888);
+  pointer-events: none;
+  z-index:        1;
+}
+
+/* ── Popover ─────────────────────────────────────────────────────────────────── */
+.cal-popover {
+  position:      fixed;
+  z-index:       500;
+  width:         310px;
+  max-height:    70vh;
+  overflow-y:    auto;
+  padding:       10px 12px;
+  background:    var(--vscode-editorWidget-background, #252526);
+  border:        1px solid var(--vscode-editorWidget-border, #454545);
+  border-radius: 6px;
+  box-shadow:    0 6px 18px rgba(0,0,0,0.5);
+  font-size:     12px;
+}
+.pop-title  { font-size: 13px; font-weight: 600; margin-bottom: 2px; word-break: break-word; }
+.pop-ws     { margin-bottom: 8px; }
+.pop-row    { display: flex; gap: 8px; margin: 3px 0; }
+.pop-label  { flex: 0 0 62px; color: var(--vscode-descriptionForeground, #888); }
+.pop-value  { flex: 1; word-break: break-word; }
+.pop-actions { display: flex; gap: 6px; margin-top: 10px; }
+.pop-list-item {
+  display:       block;
+  width:         100%;
+  text-align:    left;
+  padding:       4px 6px;
+  border:        none;
+  border-radius: 3px;
+  background:    transparent;
+  color:         inherit;
+}
+.pop-list-item:hover { background: var(--fp-bg-alt); }
+.pop-list-item .ev-sub { opacity: 0.65; }

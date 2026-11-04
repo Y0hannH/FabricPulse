@@ -24,74 +24,74 @@ const PERSIST_DEBOUNCE_MS = 1_000;
  *  can be reviewed from the sidebar. Persisted (capped) so a restart doesn't
  *  lose them; the unread count is per session. */
 export class NotificationLog implements vscode.Disposable {
-  /** Newest first. */
-  private _entries: NotificationEntry[];
-  private _nextId: number;
-  private _unread = 0;
-  private _persistTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Newest first. Named `entryList` rather than `entries`, which the public getter owns. */
+  private entryList: NotificationEntry[];
+  private nextId: number;
+  private unread = 0;
+  private persistTimer: ReturnType<typeof setTimeout> | undefined;
 
-  private readonly _onDidChange = new vscode.EventEmitter<void>();
-  readonly onDidChange = this._onDidChange.event;
+  private readonly changeEmitter = new vscode.EventEmitter<void>();
+  readonly onDidChange = this.changeEmitter.event;
 
-  constructor(private readonly _state: vscode.Memento) {
-    const saved = _state.get<NotificationEntry[]>(STATE_KEY, []);
-    this._entries = Array.isArray(saved) ? saved.slice(0, MAX_ENTRIES) : [];
-    this._nextId = this._entries.reduce((max, e) => Math.max(max, e.id), 0) + 1;
+  constructor(private readonly state: vscode.Memento) {
+    const saved = state.get<NotificationEntry[]>(STATE_KEY, []);
+    this.entryList = Array.isArray(saved) ? saved.slice(0, MAX_ENTRIES) : [];
+    this.nextId = this.entryList.reduce((max, e) => Math.max(max, e.id), 0) + 1;
   }
 
   get entries(): readonly NotificationEntry[] {
-    return this._entries;
+    return this.entryList;
   }
 
   get unreadCount(): number {
-    return this._unread;
+    return this.unread;
   }
 
   add(level: NotificationLevel, source: string, message: string): void {
     const text = message.trim();
     if (!text) return;
-    this._entries.unshift({
-      id: this._nextId++,
+    this.entryList.unshift({
+      id: this.nextId++,
       at: new Date().toISOString(),
       level,
       source,
       message: text,
     });
-    if (this._entries.length > MAX_ENTRIES) this._entries.length = MAX_ENTRIES;
-    this._unread++;
-    this._schedulePersist();
-    this._onDidChange.fire();
+    if (this.entryList.length > MAX_ENTRIES) this.entryList.length = MAX_ENTRIES;
+    this.unread++;
+    this.schedulePersist();
+    this.changeEmitter.fire();
   }
 
   markAllRead(): void {
-    if (this._unread === 0) return;
-    this._unread = 0;
-    this._onDidChange.fire();
+    if (this.unread === 0) return;
+    this.unread = 0;
+    this.changeEmitter.fire();
   }
 
   clear(): void {
-    this._entries = [];
-    this._unread = 0;
-    this._schedulePersist();
-    this._onDidChange.fire();
+    this.entryList = [];
+    this.unread = 0;
+    this.schedulePersist();
+    this.changeEmitter.fire();
   }
 
-  private _schedulePersist(): void {
-    if (this._persistTimer) clearTimeout(this._persistTimer);
-    this._persistTimer = setTimeout(() => this._persistNow(), PERSIST_DEBOUNCE_MS);
+  private schedulePersist(): void {
+    if (this.persistTimer) clearTimeout(this.persistTimer);
+    this.persistTimer = setTimeout(() => this.persistNow(), PERSIST_DEBOUNCE_MS);
   }
 
-  private _persistNow(): void {
-    this._persistTimer = undefined;
-    void this._state.update(STATE_KEY, this._entries);
+  private persistNow(): void {
+    this.persistTimer = undefined;
+    void this.state.update(STATE_KEY, this.entryList);
   }
 
   dispose(): void {
     // Flush a pending write so the last burst before shutdown isn't lost.
-    if (this._persistTimer) {
-      clearTimeout(this._persistTimer);
-      this._persistNow();
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistNow();
     }
-    this._onDidChange.dispose();
+    this.changeEmitter.dispose();
   }
 }

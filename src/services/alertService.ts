@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
-import { StorageService } from './storageService';
-import { NotificationLog } from './notificationLog';
-import { PipelineWithStatus } from '../models/types';
+
+import type { PipelineWithStatus } from '../models/types';
+import type { NotificationLog } from './notificationLog';
+import type { StorageService } from './storageService';
 
 /** Max number of alerted run IDs to keep in globalState. Old entries are
  *  evicted FIFO once this limit is reached.  Prevents unbounded growth. */
@@ -14,7 +15,7 @@ export class AlertService {
   private lastDailyReportDate: string;
 
   /** In-memory copy of alerted run IDs, synced to globalState. */
-  private _alertedIds: Set<string>;
+  private alertedIds: Set<string>;
 
   constructor(
     private readonly storage: StorageService,
@@ -23,26 +24,26 @@ export class AlertService {
   ) {
     // Hydrate from persisted state
     const persisted = context.globalState.get<string[]>(ALERTED_STATE_KEY, []);
-    this._alertedIds = new Set(persisted);
+    this.alertedIds = new Set(persisted);
     this.lastDailyReportDate = context.globalState.get<string>(DAILY_REPORT_DATE_KEY, '');
   }
 
   /** Returns true if this run was already alerted. */
-  private _wasAlerted(runId: string): boolean {
-    return this._alertedIds.has(runId);
+  private wasAlerted(runId: string): boolean {
+    return this.alertedIds.has(runId);
   }
 
   /** Marks a run as alerted and persists the bounded set. */
-  private async _markAlerted(runId: string): Promise<void> {
-    this._alertedIds.add(runId);
+  private async markAlerted(runId: string): Promise<void> {
+    this.alertedIds.add(runId);
 
     // Evict oldest entries when the set exceeds the cap
-    if (this._alertedIds.size > MAX_ALERTED_RUNS) {
-      const ids = Array.from(this._alertedIds);
-      this._alertedIds = new Set(ids.slice(ids.length - MAX_ALERTED_RUNS));
+    if (this.alertedIds.size > MAX_ALERTED_RUNS) {
+      const ids = Array.from(this.alertedIds);
+      this.alertedIds = new Set(ids.slice(ids.length - MAX_ALERTED_RUNS));
     }
 
-    await this.context.globalState.update(ALERTED_STATE_KEY, Array.from(this._alertedIds));
+    await this.context.globalState.update(ALERTED_STATE_KEY, Array.from(this.alertedIds));
   }
 
   // ─── Failure & duration alerts ───────────────────────────────────────────────
@@ -65,7 +66,7 @@ export class AlertService {
     status: string,
   ): Promise<void> {
     if (status !== 'Failed') return;
-    if (this._wasAlerted(runId)) return;
+    if (this.wasAlerted(runId)) return;
 
     this.notifications.add(
       'error',
@@ -79,7 +80,7 @@ export class AlertService {
       'Dismiss',
     );
 
-    await this._markAlerted(runId);
+    await this.markAlerted(runId);
 
     if (action === 'Open Dashboard') {
       vscode.commands.executeCommand('fabricPulse.openDashboard');
@@ -95,7 +96,7 @@ export class AlertService {
   ): Promise<void> {
     if (!pipeline.durationThresholdMs || !durationMs) return;
     if (durationMs <= pipeline.durationThresholdMs) return;
-    if (this._wasAlerted(runId)) return;
+    if (this.wasAlerted(runId)) return;
 
     const actual = formatDuration(durationMs);
     const threshold = formatDuration(pipeline.durationThresholdMs);
@@ -111,7 +112,7 @@ export class AlertService {
       'Dismiss',
     );
 
-    await this._markAlerted(runId);
+    await this.markAlerted(runId);
   }
 
   // ─── Daily report ────────────────────────────────────────────────────────────

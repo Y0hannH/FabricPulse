@@ -1,5 +1,6 @@
+import type { TokenCredential } from '@azure/identity';
+import { AzureCliCredential, InteractiveBrowserCredential } from '@azure/identity';
 import * as vscode from 'vscode';
-import { AzureCliCredential, InteractiveBrowserCredential, TokenCredential } from '@azure/identity';
 
 export const FABRIC_SCOPE = 'https://api.fabric.microsoft.com/.default';
 export const POWERBI_SCOPE = 'https://analysis.windows.net/powerbi/api/.default';
@@ -121,10 +122,10 @@ export class AuthService {
    *  expired CLI session can be swapped for the interactive flow. */
   private cliCredentials = new Set<string>();
 
-  private readonly _onDidChangeAuthState = new vscode.EventEmitter<AuthState>();
+  private readonly authStateEmitter = new vscode.EventEmitter<AuthState>();
   /** Fires as an acquisition becomes interactive ('pending'), succeeds ('idle')
    *  or gives up ('failed'). The dashboard turns this into a re-auth banner. */
-  readonly onDidChangeAuthState = this._onDidChangeAuthState.event;
+  readonly onDidChangeAuthState = this.authStateEmitter.event;
 
   async getToken(tenantId: string, scope = FABRIC_SCOPE): Promise<string> {
     const cacheKey = `${tenantId}:${scope}`;
@@ -139,10 +140,10 @@ export class AuthService {
     // caller never spawns a second browser window for the same sign-in.
     const running = this.inflight.get(cacheKey);
     if (running) {
-      return this._withTimeout(running, tenantId);
+      return this.withTimeout(running, tenantId);
     }
 
-    const acquisition = this._acquireToken(tenantId, scope, cacheKey);
+    const acquisition = this.acquireToken(tenantId, scope, cacheKey);
     this.inflight.set(cacheKey, acquisition);
     // The stored copy outlives callers that time out, so swallow its rejection
     // here — the caller below still receives it through the race.
@@ -156,13 +157,13 @@ export class AuthService {
         }
       });
 
-    return this._withTimeout(acquisition, tenantId);
+    return this.withTimeout(acquisition, tenantId);
   }
 
   /** Races an acquisition against ACQUIRE_TIMEOUT_MS and reports its phase.
    *  On timeout the acquisition is deliberately left running: a browser sign-in
    *  the user finishes late still fills the cache for the next call. */
-  private async _withTimeout(acquisition: Promise<string>, tenantId: string): Promise<string> {
+  private async withTimeout(acquisition: Promise<string>, tenantId: string): Promise<string> {
     let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
 
     const timeout = new Promise<never>((_, reject) => {
@@ -179,7 +180,7 @@ export class AuthService {
 
     const hintTimer = setTimeout(
       () =>
-        this._emit({
+        this.emit({
           tenantId,
           phase: 'pending',
           message: 'Waiting for the Microsoft sign-in to complete in your browser.',
@@ -189,10 +190,10 @@ export class AuthService {
 
     try {
       const token = await Promise.race([acquisition, timeout]);
-      this._emit({ tenantId, phase: 'idle' });
+      this.emit({ tenantId, phase: 'idle' });
       return token;
     } catch (err: unknown) {
-      this._emit({
+      this.emit({
         tenantId,
         phase: 'failed',
         message: err instanceof Error ? err.message : String(err),
@@ -204,11 +205,11 @@ export class AuthService {
     }
   }
 
-  private _emit(state: AuthState): void {
-    this._onDidChangeAuthState.fire(state);
+  private emit(state: AuthState): void {
+    this.authStateEmitter.fire(state);
   }
 
-  private async _acquireToken(tenantId: string, scope: string, cacheKey: string): Promise<string> {
+  private async acquireToken(tenantId: string, scope: string, cacheKey: string): Promise<string> {
     let credential = await this.getCredential(tenantId);
 
     let tokenResult;
@@ -318,6 +319,6 @@ export class AuthService {
   }
 
   dispose(): void {
-    this._onDidChangeAuthState.dispose();
+    this.authStateEmitter.dispose();
   }
 }

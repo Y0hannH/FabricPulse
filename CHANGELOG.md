@@ -2,6 +2,14 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
+## [1.12.0] - 2026-11-04
+
+### Added
+- **Calendar view**: a new **Open Calendar** button in the sidebar, under *Open Dashboard*, opens everything that runs on an Outlook-style calendar. It uses the dashboard's filters (tenant, workspace, search, favorites, type, status) and opens on the current week; a *Day* view, previous/next and *Today* are in the bar below. Recorded runs are drawn from their start to their end, colored by status; upcoming scheduled runs are drawn from their start time to the item's average duration, dashed so an estimate never reads as a fact. Upcoming runs are expanded from the Fabric schedules (cron, daily, weekly, monthly, in the schedule's own time zone), so browsing to another week needs no API call. Clicking a block shows its details with *Open in Fabric* and *History*
+  - A **🗓 Scheduled** filter, specific to the calendar, keeps only the items that have a schedule (enabled or paused)
+  - An item running every 30 minutes or less is drawn as one thin strip per day along the right edge (its recorded runs show the day's worst status), and blocks that overlap more than five deep fold into a **+N** pill that lists them
+  - The past comes from the local run history. Up to 40 items in scope get their full history on first load; beyond that only the latest run is fetched, and **⬇ Load history** fetches the full history of the items shown. New command: `FabricPulse: Open Calendar`
+
 ## [1.11.0] - 2026-09-16
 
 ### Added
