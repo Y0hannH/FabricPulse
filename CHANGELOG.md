@@ -4,6 +4,9 @@ All notable changes to the **FabricPulse** extension will be documented in this 
 
 ## [Unreleased]
 
+### Fixed
+- **Dashboard — auto refresh skipped every other cycle**: a polling tick re-read only the items older than `fabricPulse.pollingInterval`, but the previous cycle had fetched them a few seconds after it started, so at the next tick they were still just short of one interval. The dashboard therefore updated about every two intervals. Every polling tick now re-reads the latest run of every item in scope
+- **Dashboard — schedules re-read less often**: a schedule is now re-read every 10 minutes (or on *Refresh*) instead of every cycle, so with the fix above a cycle still costs one run call per item
 ### Added
 - **Calendar — refresh countdown**: the toolbar now shows *Updated … · Next in …*, like the dashboard, so it is visible that the calendar refreshes itself
 

@@ -44,6 +44,11 @@ const STUCK_REFRESH_MS = 3 * 60_000;
  *  between polls rather than in the middle of one. */
 const TOKEN_PREWARM_MS = 5 * 60_000;
 
+/** A schedule changes when someone edits it in Fabric, not every minute. Polling
+ *  re-reads runs every cycle but a schedule only this often, which keeps a cycle at
+ *  one run call per item. The Refresh button and a single-item refresh bypass it. */
+const SCHEDULE_TTL_MS = 10 * 60_000;
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export class DashboardPanel {
@@ -78,6 +83,8 @@ export class DashboardPanel {
   /** itemId → last fetched schedule info. Kept across the cache/fetch phases of a
    *  refresh so the "Next Run" column doesn't flicker; cleared on tenant/workspace change. */
   private schedulesById = new Map<string, ScheduleInfo>();
+  /** itemId → epoch ms of the last schedule fetch, for SCHEDULE_TTL_MS. */
+  private scheduleFetchedAt = new Map<string, number>();
 
   /** Epoch ms at which the in-progress refresh started — the watchdog reads it
    *  to tell a slow refresh from a stuck one. */
@@ -235,7 +242,11 @@ export class DashboardPanel {
     this.postState();
   }
 
-  public async refresh(force = false, initialLoad = false): Promise<void> {
+  /** `due` marks a polling tick: every item in scope is re-read whatever its age.
+   *  Comparing ages instead skipped every other cycle — items fetched a few seconds
+   *  into the last cycle are still a few seconds short of one interval at the next
+   *  tick, so they were never stale when the tick fired. */
+  public async refresh(force = false, initialLoad = false, due = false): Promise<void> {
     if (this.isLoading) {
       // Debounce concurrent refreshes — unless the flag is stale. A refresh that
       // hung (typically on an expired token) used to leave it set for good,
@@ -371,13 +382,14 @@ export class DashboardPanel {
           const pollingMs = cfg.get<number>('pollingInterval', 60) * 1000;
           const favorites = tenantFavorites;
           const wsMap = new Map(this.workspaces.map((w) => [w.id, w]));
-          // A forced refresh re-fetches every favorite; otherwise only stale ones.
-          const staleFavorites = force
-            ? favorites
-            : favorites.filter((f) => {
-                const lastFetched = this.runsFetchedAt.get(f.pipelineId) ?? 0;
-                return Date.now() - lastFetched >= pollingMs;
-              });
+          // A forced refresh or a polling tick re-fetches every favorite; otherwise only stale ones.
+          const staleFavorites =
+            force || due
+              ? favorites
+              : favorites.filter((f) => {
+                  const lastFetched = this.runsFetchedAt.get(f.pipelineId) ?? 0;
+                  return Date.now() - lastFetched >= pollingMs;
+                });
 
           const favBatchSize = cfg.get<number>('batchSize', 5);
           for (let i = 0; i < staleFavorites.length; i += favBatchSize) {
@@ -391,6 +403,7 @@ export class DashboardPanel {
                   this.fetchSchedule(
                     { id: fav.pipelineId, itemType: fav.itemType as ItemType | undefined },
                     fav.workspaceId,
+                    SCHEDULE_TTL_MS,
                   ),
                   (async () => {
                     try {
@@ -592,6 +605,7 @@ export class DashboardPanel {
       const staleMeta = allMeta
         .filter((m) => {
           if (this.favoritesOnlyMode && !m.pipeline.isFavorite) return false;
+          if (due) return true;
           const lastFetched = this.runsFetchedAt.get(m.pipeline.id) ?? 0;
           return Date.now() - lastFetched >= pollingMs;
         })
@@ -618,7 +632,7 @@ export class DashboardPanel {
 
             // Runs and schedule are independent calls — fetch them concurrently.
             await Promise.all([
-              this.fetchSchedule(pipeline, ws.id),
+              this.fetchSchedule(pipeline, ws.id, SCHEDULE_TTL_MS),
               (async () => {
                 try {
                   run = await this.fetchLastRun(ws.id, pipeline.id, pipeline.itemType);
@@ -783,6 +797,7 @@ export class DashboardPanel {
       case 'refresh':
         this.runsFetchedAt.clear();
         this.schedulesById.clear();
+        this.scheduleFetchedAt.clear();
         await this.refresh(true);
         break;
 
@@ -798,6 +813,7 @@ export class DashboardPanel {
         this.selectedWorkspaceId = '';
         this.runsFetchedAt.clear();
         this.schedulesById.clear();
+        this.scheduleFetchedAt.clear();
         await this.refresh();
         break;
 
@@ -805,6 +821,7 @@ export class DashboardPanel {
         this.selectedWorkspaceId = msg.workspaceId;
         this.runsFetchedAt.clear(); // force live fetch on first load of a workspace
         this.schedulesById.clear();
+        this.scheduleFetchedAt.clear();
         await this.refresh();
         break;
 
@@ -1248,11 +1265,14 @@ export class DashboardPanel {
   // ─── Schedules ────────────────────────────────────────────────────────────
 
   /** Fetches the schedule for an item and caches it. Non-fatal: on error it
-   *  keeps any previously cached value rather than clearing the column. */
+   *  keeps any previously cached value rather than clearing the column.
+   *  `maxAgeMs`: skip the call when the schedule was fetched more recently than this. */
   private async fetchSchedule(
     item: { id: string; itemType?: ItemType },
     workspaceId: string,
+    maxAgeMs = 0,
   ): Promise<void> {
+    if (Date.now() - (this.scheduleFetchedAt.get(item.id) ?? 0) < maxAgeMs) return;
     try {
       let info;
       switch (item.itemType ?? 'pipeline') {
@@ -1288,6 +1308,8 @@ export class DashboardPanel {
           );
           break;
       }
+      // Recorded even when the item has no schedule, so those aren't asked every cycle.
+      this.scheduleFetchedAt.set(item.id, Date.now());
       if (info !== undefined) this.schedulesById.set(item.id, info);
     } catch (err) {
       console.warn(`[FabricPulse] schedule fetch failed for ${item.id}:`, err);
