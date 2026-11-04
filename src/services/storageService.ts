@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import type { Database as SqlDatabase } from 'sql.js';
+import type { BindParams, Database as SqlDatabase, QueryExecResult } from 'sql.js';
 import * as vscode from 'vscode';
 
 import type { Annotation, Favorite, PatternWarning, StoredRun } from '../models/types';
@@ -233,7 +233,7 @@ export class StorageService {
   }
 
   private runMigrations(): void {
-    const rows = this.db.exec('SELECT MAX(version) AS v FROM schema_version');
+    const rows = this.query('SELECT MAX(version) AS v FROM schema_version');
     const current = (rows[0]?.values[0]?.[0] as number) ?? 0;
     if (current < 1) {
       this.db.run('INSERT INTO schema_version (version) VALUES (?)', [1]);
@@ -368,13 +368,13 @@ export class StorageService {
     const sql = since
       ? 'SELECT * FROM pipeline_runs WHERE pipeline_id = ? AND start_time >= ? ORDER BY start_time DESC'
       : 'SELECT * FROM pipeline_runs WHERE pipeline_id = ? ORDER BY start_time DESC';
-    const result = this.db.exec(sql, since ? [pipelineId, since] : [pipelineId]);
+    const result = this.query(sql, since ? [pipelineId, since] : [pipelineId]);
     return this.rows(result).map((r) => this.mapRun(r));
   }
 
   getLastRun(pipelineId: string): StoredRun | undefined {
     this.trackOp();
-    const result = this.db.exec(
+    const result = this.query(
       'SELECT * FROM pipeline_runs WHERE pipeline_id = ? ORDER BY start_time DESC LIMIT 1',
       [pipelineId],
     );
@@ -388,7 +388,7 @@ export class StorageService {
     min: number | undefined;
   } {
     this.trackOp();
-    const result = this.db.exec(
+    const result = this.query(
       `SELECT
          AVG(CASE WHEN status = 'Succeeded' THEN duration_ms END),
          MAX(CASE WHEN status = 'Succeeded' THEN duration_ms END),
@@ -407,7 +407,7 @@ export class StorageService {
 
   getRunCount(pipelineId: string): number {
     this.trackOp();
-    const result = this.db.exec('SELECT COUNT(*) FROM pipeline_runs WHERE pipeline_id = ?', [
+    const result = this.query('SELECT COUNT(*) FROM pipeline_runs WHERE pipeline_id = ?', [
       pipelineId,
     ]);
     return (result[0]?.values[0]?.[0] as number) ?? 0;
@@ -416,7 +416,7 @@ export class StorageService {
   getSuccessRate(pipelineId: string, days: number): { rate: number; total: number } {
     this.trackOp();
     const since = new Date(Date.now() - days * 86_400_000).toISOString();
-    const result = this.db.exec(
+    const result = this.query(
       `SELECT COUNT(*) AS total,
               SUM(CASE WHEN status = 'Succeeded' THEN 1 ELSE 0 END) AS succeeded
        FROM pipeline_runs WHERE pipeline_id = ? AND start_time >= ?`,
@@ -432,7 +432,7 @@ export class StorageService {
     this.trackOp();
     const start = new Date();
     start.setHours(0, 0, 0, 0);
-    const result = this.db.exec(
+    const result = this.query(
       `SELECT COUNT(*) AS total,
               SUM(CASE WHEN status = 'Failed' THEN 1 ELSE 0 END) AS failed
        FROM pipeline_runs WHERE tenant_id = ? AND start_time >= ?`,
@@ -445,7 +445,7 @@ export class StorageService {
   /** Returns the distinct set of workspaces seen in pipeline_runs for a given tenant.
    *  Used to populate the workspace picker from cache when no live fetch is needed. */
   getKnownWorkspaces(tenantId: string): { id: string; displayName: string; tenantId: string }[] {
-    const result = this.db.exec(
+    const result = this.query(
       // GROUP BY rather than DISTINCT: a workspace whose name was ever recorded
       // differently — a GUID written by an older build, or a rename in Fabric —
       // produced one row per spelling and so appeared twice in the picker.
@@ -471,7 +471,7 @@ export class StorageService {
     tenantId: string;
     itemType: string;
   }[] {
-    const result = this.db.exec(
+    const result = this.query(
       // GROUP BY rather than DISTINCT, for the same reason as getKnownWorkspaces:
       // an item recorded under two names was listed twice. Taking the MAX() row
       // also heals GUID-named rows as soon as one real name lands.
@@ -494,18 +494,18 @@ export class StorageService {
   // ─── favorites ────────────────────────────────────────────────────────────
 
   getFavorites(): Favorite[] {
-    const result = this.db.exec('SELECT * FROM favorites');
+    const result = this.query('SELECT * FROM favorites');
     return this.rows(result).map((r) => this.mapFav(r));
   }
 
   getFavorite(pipelineId: string): Favorite | undefined {
-    const result = this.db.exec('SELECT * FROM favorites WHERE pipeline_id = ?', [pipelineId]);
+    const result = this.query('SELECT * FROM favorites WHERE pipeline_id = ?', [pipelineId]);
     const rows = this.rows(result);
     return rows.length ? this.mapFav(rows[0]) : undefined;
   }
 
   isFavorite(pipelineId: string): boolean {
-    const result = this.db.exec('SELECT id FROM favorites WHERE pipeline_id = ?', [pipelineId]);
+    const result = this.query('SELECT id FROM favorites WHERE pipeline_id = ?', [pipelineId]);
     return (result[0]?.values?.length ?? 0) > 0;
   }
 
@@ -548,7 +548,7 @@ export class StorageService {
   // ─── workspace_favorites ──────────────────────────────────────────────────
 
   isWorkspaceFavorite(workspaceId: string): boolean {
-    const result = this.db.exec('SELECT id FROM workspace_favorites WHERE workspace_id = ?', [
+    const result = this.query('SELECT id FROM workspace_favorites WHERE workspace_id = ?', [
       workspaceId,
     ]);
     return (result[0]?.values?.length ?? 0) > 0;
@@ -569,7 +569,7 @@ export class StorageService {
   // ─── lakehouse_favorites ────────────────────────────────────────────────
 
   isLakehouseFavorite(lakehouseId: string): boolean {
-    const result = this.db.exec('SELECT id FROM lakehouse_favorites WHERE lakehouse_id = ?', [
+    const result = this.query('SELECT id FROM lakehouse_favorites WHERE lakehouse_id = ?', [
       lakehouseId,
     ]);
     return (result[0]?.values?.length ?? 0) > 0;
@@ -589,7 +589,7 @@ export class StorageService {
   }
 
   getLakehouseFavorites(): { tenantId: string; workspaceId: string; lakehouseId: string }[] {
-    const result = this.db.exec(
+    const result = this.query(
       'SELECT tenant_id, workspace_id, lakehouse_id FROM lakehouse_favorites',
     );
     return this.rows(result).map((r) => ({
@@ -614,7 +614,7 @@ export class StorageService {
     lakehouseId: string,
     tableName: string,
   ): { triggeredAt: string; status: string } | undefined {
-    const result = this.db.exec(
+    const result = this.query(
       'SELECT triggered_at, status FROM lakehouse_maintenance WHERE lakehouse_id = ? AND table_name = ? LIMIT 1',
       [lakehouseId, tableName],
     );
@@ -627,7 +627,7 @@ export class StorageService {
   }
 
   getAllMaintenances(lakehouseId: string): Map<string, { triggeredAt: string; status: string }> {
-    const result = this.db.exec(
+    const result = this.query(
       'SELECT table_name, triggered_at, status FROM lakehouse_maintenance WHERE lakehouse_id = ?',
       [lakehouseId],
     );
@@ -653,7 +653,7 @@ export class StorageService {
   }
 
   getTableSizes(lakehouseId: string): Map<string, number> {
-    const result = this.db.exec(
+    const result = this.query(
       'SELECT table_key, size_bytes FROM lakehouse_table_sizes WHERE lakehouse_id = ?',
       [lakehouseId],
     );
@@ -667,7 +667,7 @@ export class StorageService {
   // ─── annotations ─────────────────────────────────────────────────────────
 
   getAnnotations(pipelineId: string): Annotation[] {
-    const result = this.db.exec(
+    const result = this.query(
       'SELECT * FROM annotations WHERE pipeline_id = ? ORDER BY date DESC',
       [pipelineId],
     );
@@ -687,7 +687,7 @@ export class StorageService {
 
   detectPatterns(pipelineId: string, days = 30): PatternWarning[] {
     const since = new Date(Date.now() - days * 86_400_000).toISOString();
-    const result = this.db.exec(
+    const result = this.query(
       `SELECT start_time, status FROM pipeline_runs
        WHERE pipeline_id = ? AND start_time >= ? ORDER BY start_time DESC`,
       [pipelineId, since],
@@ -783,6 +783,29 @@ export class StorageService {
   }
 
   // ─── Row helpers ──────────────────────────────────────────────────────────
+
+  /** Runs one SELECT and returns what Database.exec would: `[{ columns, values }]`, or
+   *  `[]` when no row matches.
+   *
+   *  Not Database.exec: in sql.js 1.14 every exec call leaves a reference behind. After
+   *  roughly 327 000 calls SQLite stops with 'too many references to "<table>": max
+   *  65535' and the WASM module is left corrupted — every later call fails with
+   *  'memory access out of bounds' until the extension host restarts. A refresh over a
+   *  large capacity gets there (the calendar alone does several queries per item after
+   *  every batch). A prepared statement, freed in the finally, does not leak: 1.5 M calls
+   *  were run without a failure. run() is safe too; only exec leaks. */
+  private query(sql: string, params?: BindParams): QueryExecResult[] {
+    const stmt = this.db.prepare(sql);
+    try {
+      if (params) stmt.bind(params);
+      const columns = stmt.getColumnNames();
+      const values: QueryExecResult['values'] = [];
+      while (stmt.step()) values.push(stmt.get());
+      return values.length > 0 ? [{ columns, values }] : [];
+    } finally {
+      stmt.free();
+    }
+  }
 
   /** Convert exec() result into an array of plain objects keyed by column name. */
   private rows(result: ReturnType<SqlDatabase['exec']>): Record<string, unknown>[] {

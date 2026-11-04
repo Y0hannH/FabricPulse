@@ -2,6 +2,11 @@
 
 All notable changes to the **FabricPulse** extension will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Refresh over a large scope failed with `memory access out of bounds`**: the local database library (sql.js 1.14) leaves a reference behind on every `exec` call. After about 327 000 calls SQLite stops with `too many references` and the WebAssembly module is left corrupted, so every later storage call — and the database write to disk — failed until VS Code was restarted. A forced refresh over a capacity with hundreds of items reached that count around the 37th batch (the calendar runs several queries per item after every batch). Reads now go through prepared statements, which do not leak; the same loads run past 1.8 million queries with no failure, and every read returns exactly what it did before
+
 ## [1.12.2] - 2026-11-04
 
 ### Added
