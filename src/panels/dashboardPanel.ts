@@ -49,6 +49,18 @@ const TOKEN_PREWARM_MS = 5 * 60_000;
  *  one run call per item. The Refresh button and a single-item refresh bypass it. */
 const SCHEDULE_TTL_MS = 10 * 60_000;
 
+/** A run triggered from the panel is followed on every polling tick until it
+ *  ends — the cache-only path of a tick (no workspace selected) makes no API
+ *  call at all, so without this the row stayed on its first status. Past this
+ *  age the run is given up on: no Fabric item legitimately runs that long. */
+const WATCH_MAX_MS = 24 * 3_600_000;
+
+/** Fabric's run list lags the trigger call, and the two clocks differ: a last
+ *  run that started up to this long before the trigger counts as the new one. */
+const WATCH_CLOCK_SKEW_MS = 2 * 60_000;
+
+const ACTIVE_RUN_STATUSES = new Set(['NotStarted', 'Queued', 'InProgress']);
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export class DashboardPanel {
@@ -85,6 +97,12 @@ export class DashboardPanel {
   private schedulesById = new Map<string, ScheduleInfo>();
   /** itemId → epoch ms of the last schedule fetch, for SCHEDULE_TTL_MS. */
   private scheduleFetchedAt = new Map<string, number>();
+  /** itemId → run triggered from the panel and not finished yet. Not cleared on
+   *  workspace change: the run keeps going whatever the view shows. */
+  private watchedRuns = new Map<
+    string,
+    { workspaceId: string; itemType?: ItemType; triggeredAt: number }
+  >();
 
   /** Epoch ms at which the in-progress refresh started — the watchdog reads it
    *  to tell a slow refresh from a stuck one. */
@@ -1196,6 +1214,7 @@ export class DashboardPanel {
     workspaceId: string,
     itemId: string,
     itemType?: ItemType,
+    scheduleMaxAgeMs = 0,
   ): Promise<void> {
     const target = this.pipelines.find((p) => p.id === itemId);
     if (!target) return; // item no longer in view (tenant/workspace changed)
@@ -1221,7 +1240,7 @@ export class DashboardPanel {
       ]);
     }
     this.runsFetchedAt.set(itemId, Date.now());
-    await this.fetchSchedule({ id: itemId, itemType: type }, workspaceId);
+    await this.fetchSchedule({ id: itemId, itemType: type }, workspaceId, scheduleMaxAgeMs);
 
     const { rate } = this.storage.getSuccessRate(itemId, 7);
     const durStats = this.storage.getDurationStats(itemId);
@@ -1249,8 +1268,9 @@ export class DashboardPanel {
     itemId: string,
     itemType?: ItemType,
   ): void {
-    // First tick catches the run starting (Queued/InProgress); later ticks
-    // catch the final status. A pipeline/notebook run rarely appears instantly.
+    this.watchedRuns.set(itemId, { workspaceId, itemType, triggeredAt: Date.now() });
+    // Quick feedback before the next polling tick; pollWatchedRuns then
+    // follows the run to its final status. A run rarely appears instantly.
     const delaysMs = [8_000, 30_000];
     for (const delay of delaysMs) {
       setTimeout(() => {
@@ -1259,6 +1279,37 @@ export class DashboardPanel {
           console.warn(`[FabricPulse] post-trigger refresh failed for ${itemId}:`, err),
         );
       }, delay);
+    }
+  }
+
+  /** Re-reads every run triggered from the panel that hasn't ended yet. Called
+   *  on each polling tick, after the regular refresh — which may well have
+   *  skipped the item (cache-only path, favorites-only mode). Non-fatal. */
+  public async pollWatchedRuns(): Promise<void> {
+    for (const [itemId, w] of [...this.watchedRuns]) {
+      if (this.disposed) return;
+      const now = Date.now();
+      if (now - w.triggeredAt > WATCH_MAX_MS || !this.pipelines.some((p) => p.id === itemId)) {
+        this.watchedRuns.delete(itemId);
+        continue;
+      }
+      // The regular refresh of this tick already read it.
+      const fetchedRecently = now - (this.runsFetchedAt.get(itemId) ?? 0) < 10_000;
+      if (!fetchedRecently) {
+        try {
+          await this.refreshItemLastRun(w.workspaceId, itemId, w.itemType, SCHEDULE_TTL_MS);
+        } catch (err) {
+          console.warn(`[FabricPulse] watched-run refresh failed for ${itemId}:`, err);
+          continue;
+        }
+      }
+      const run = this.pipelines.find((p) => p.id === itemId)?.lastRun;
+      if (!run) continue;
+      // Until the new run is listed, the last run is the previous one — its
+      // final status says nothing about the run just triggered.
+      const startMs = run.startTime ? Date.parse(run.startTime) : NaN;
+      const isNewRun = isNaN(startMs) || startMs >= w.triggeredAt - WATCH_CLOCK_SKEW_MS;
+      if (isNewRun && !ACTIVE_RUN_STATUSES.has(run.status)) this.watchedRuns.delete(itemId);
     }
   }
 
