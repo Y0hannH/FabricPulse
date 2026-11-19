@@ -270,6 +270,8 @@ function startPolling(): void {
     try {
       // due: every item in scope is re-read this cycle, whatever its age.
       await DashboardPanel.currentPanel.refresh(false, false, true);
+      // Runs triggered from the panel, which this refresh may not have read.
+      await DashboardPanel.currentPanel?.pollWatchedRuns();
     } catch (err: unknown) {
       console.warn('[FabricPulse] Polling refresh failed — the loop continues:', err);
     }
